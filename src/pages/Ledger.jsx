@@ -36,6 +36,7 @@ export default function Ledger() {
       {data.loading ? (
         <p className="muted">Memuat…</p>
       ) : (
+        <div className="table-wrap">
         <table className="table">
           <thead>
             <tr><th>Tanggal</th><th>Dokumen</th><th>Ket</th><th className="num">Debit</th><th className="num">Kredit</th><th className="num">Saldo</th></tr>
@@ -53,6 +54,7 @@ export default function Ledger() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

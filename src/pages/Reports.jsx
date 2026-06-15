@@ -51,6 +51,7 @@ function Section({ title, rows = [], total }) {
   return (
     <>
       <h4>{title}</h4>
+      <div className="table-wrap">
       <table className="table">
         <tbody>
           {rows.map((r) => (
@@ -66,6 +67,7 @@ function Section({ title, rows = [], total }) {
           </tr>
         </tbody>
       </table>
+      </div>
     </>
   );
 }
@@ -77,6 +79,7 @@ function TrialBalance({ year, month }) {
   return (
     <div className="card">
       <h3>Trial Balance s.d. {namaBulan(month)} {year}</h3>
+      <div className="table-wrap">
       <table className="table">
         <thead>
           <tr><th>Kode</th><th>Akun</th><th className="num">Debit</th><th className="num">Kredit</th></tr>
@@ -97,6 +100,7 @@ function TrialBalance({ year, month }) {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

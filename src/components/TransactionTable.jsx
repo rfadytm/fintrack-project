@@ -4,6 +4,7 @@ import { formatTanggal } from "../utils/dateHelpers";
 export default function TransactionTable({ transactions = [] }) {
   if (!transactions.length) return <p className="muted">Belum ada transaksi.</p>;
   return (
+    <div className="table-wrap">
     <table className="table">
       <thead>
         <tr>
@@ -33,5 +34,6 @@ export default function TransactionTable({ transactions = [] }) {
         })}
       </tbody>
     </table>
+    </div>
   );
 }

@@ -20,6 +20,7 @@ export default function COA() {
   return (
     <div className="page">
       <h2>Chart of Accounts</h2>
+      <div className="table-wrap">
       <table className="table">
         <thead>
           <tr><th>Kode</th><th>Nama</th><th>Tipe</th><th>NB</th><th className="num">Saldo</th></tr>
@@ -38,6 +39,7 @@ export default function COA() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

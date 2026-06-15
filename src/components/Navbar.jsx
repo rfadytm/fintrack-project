@@ -12,7 +12,7 @@ const links = [
 export default function Navbar() {
   return (
     <nav className="navbar">
-      <span className="brand">💰 FinTrack</span>
+      <NavLink to="/dashboard" className="brand">💰 FinTrack</NavLink>
       <div className="navlinks">
         {links.map(([to, label]) => (
           <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>

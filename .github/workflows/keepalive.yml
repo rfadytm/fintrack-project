@@ -1,0 +1,42 @@
+name: keepalive-and-backup
+
+# B8: Supabase free tier pause setelah 7 hari idle -> ping tiap 3 hari.
+# B9: backup harian via pg_dump -> commit ke repo (private).
+on:
+  schedule:
+    - cron: "0 2 */3 * *"   # tiap 3 hari, 02:00 UTC (keepalive)
+    - cron: "0 3 * * *"     # harian, 03:00 UTC (backup)
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    if: github.event.schedule == '0 2 */3 * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST
+        run: |
+          curl -fsS "${{ secrets.SUPABASE_URL }}/rest/v1/bot_settings?select=key&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            && echo "Supabase alive."
+
+  backup:
+    if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Dump database
+        run: |
+          mkdir -p backups
+          STAMP=$(date -u +%Y-%m-%d)
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" --no-owner --no-privileges \
+            -f "backups/fintrack_${STAMP}.sql"
+      - name: Commit backup
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -f backups/*.sql
+          git commit -m "backup: $(date -u +%Y-%m-%d)" || echo "no changes"
+          git push

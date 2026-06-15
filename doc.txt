@@ -1,0 +1,2444 @@
+FINTRACK
+Personal Accounting System
+Project Documentation & Build Plan — v1.0
+Versi
+v1.0 — Initial Build Plan
+Tech Stack
+React 18 + Vite | Python 3.12 | Supabase | Vercel Hobby
+Input Method
+Telegram Bot (Inline Keyboard — No Quick Text)
+Database
+PostgreSQL via Supabase (13 Tabel + 2 Views)
+Hosting
+Vercel Hobby (Free, No Credit Card)
+Akuntansi
+Accrual-Ready, Cash Basis Default, Double-Entry
+COA
+73 Akun + 1 Catch-All (9999) = 74 Total
+Akun Bank
+BNI (Kas Besar) | SeaBank (Imprest Rp500rb) | Bank Tabungan TBD
+Tanggal
+15 Juni 2026
+1. PROJECT OVERVIEW
+1.1 Deskripsi
+FinTrack adalah sistem akuntansi keuangan personal berbasis double-entry bookkeeping, dibangun dengan arsitektur cloud-first menggunakan Vercel (serverless) + Supabase (PostgreSQL) + Telegram Bot sebagai primary input interface. Sistem dirancang scalable — COA, workflow, dan schema sudah production-ready sehingga bisa dijadikan template UMKM atau PT tanpa rebuild.
+1.2 Tujuan Sistem
+Catat transaksi keuangan personal secara benar (double-entry, audit trail)
+Input harian via Telegram Bot tanpa buka laptop
+Dashboard web untuk monitoring, laporan, dan analisis
+Scalable ke bisnis: COA, workflow, schema siap untuk UMKM/PT
+Transaksi salah = REVERSE (bukan delete) — data tidak pernah hilang
+1.3 Tech Stack
+KOMPONEN
+TEKNOLOGI
+FUNGSI
+GRATIS?
+Frontend
+React 18 + Vite 5
+Dashboard web interaktif
+✅ Vercel Hobby
+Backend Bot
+Python + python-telegram-bot v21
+Telegram webhook handler
+✅ Vercel Function
+Backend API
+Python + httpx
+REST API untuk dashboard
+✅ Vercel Function
+Database
+Supabase (PostgreSQL 15)
+13 tabel + 2 views
+✅ 500MB free, no CC
+Hosting
+Vercel Hobby Plan
+Bot + API + Frontend
+✅ No CC needed
+Charts
+Recharts
+Visualisasi data dashboard
+✅ Open source
+Auth
+Custom HMAC Token
+Login dashboard via Telegram
+✅ Custom built
+Backup
+GitHub Actions
+Daily backup + keepalive
+✅ Free tier
+Routing
+React Router DOM v6
+Multi-page navigation
+✅ Open source
+1.4 Prinsip Akuntansi
+PRINSIP
+IMPLEMENTASI DI FINTRACK
+Double-Entry Bookkeeping
+SUM(Debit)=SUM(Kredit) wajib sebelum setiap POST — enforced di app layer
+Period Lock
+/lock YYYY-MM → periode dikunci, tidak bisa input/edit transaksi di bulan itu
+Audit Trail
+Semua INSERT/UPDATE di transactions & journal_lines → auto-log ke audit_log via trigger
+No Delete Policy
+Transaksi salah: buat dokumen REVERSE (RV) di tanggal hari ini — data asli tetap ada
+COA 3-Level
+Kode:Akun:Sub-Akun — scalable dari personal ke PT, 74 akun total
+Accrual-Ready / Cash Default
+Arsitektur mendukung accrual, default perilaku cash basis untuk personal
+Imprest Method
+SeaBank = kas kecil, target Rp 500.000, isi otomatis hitung selisih ke target
+Normal Balance
+Aset & Beban = Debit normal. Liabilitas, Ekuitas, Pendapatan = Kredit normal
+2. FOLDER STRUCTURE
+Semua kode dalam satu GitHub repo. Vercel auto-detect folder api/ sebagai serverless functions Python dan build React dari package.json.
+fintrack/                          ← Root project (GitHub repo)
+├── api/                           ← Vercel serverless Python functions
+│   ├── telegram/
+│   │   └── webhook.py             → POST /api/telegram/webhook
+│   ├── transactions/
+│   │   └── index.py               → GET /api/transactions?period=&type=&account=
+│   ├── reports/
+│   │   ├── monthly.py             → GET /api/reports/monthly?year=&month=
+│   │   ├── balance.py             → GET /api/reports/balance
+│   │   ├── ledger.py              → GET /api/reports/ledger?account=&year=&month=
+│   │   ├── trial_balance.py       → GET /api/reports/trial-balance?year=&month=
+│   │   └── income_statement.py    → GET /api/reports/income-statement?year=&month=
+│   ├── accounts/
+│   │   └── index.py               → GET /api/accounts (COA list)
+│   └── auth/
+│       ├── verify.py              → POST /api/auth/verify (token → session cookie)
+│       └── me.py                  → GET /api/auth/me (cek session aktif)
+│
+├── src/                           ← React/Vite frontend source
+│   ├── pages/
+│   │   ├── Dashboard.jsx          → Ringkasan keuangan utama
+│   │   ├── Journal.jsx            → Daftar semua jurnal entry
+│   │   ├── Ledger.jsx             → Buku besar per akun
+│   │   ├── Reports.jsx            → Neraca, Laba Rugi, Trial Balance
+│   │   ├── COA.jsx                → Chart of Accounts & saldo per akun
+│   │   ├── Settings.jsx           → Pengaturan (alias, default akun)
+│   │   └── Login.jsx              → Halaman login (instruksi /getlink)
+│   ├── components/
+│   │   ├── Navbar.jsx             → Navigasi utama
+│   │   ├── BalanceCard.jsx        → Card saldo per akun bank
+│   │   ├── TransactionTable.jsx   → Tabel transaksi reusable
+│   │   ├── CategoryChart.jsx      → Pie/bar chart per kategori beban
+│   │   ├── TimelineChart.jsx      → Line chart akumulasi harian
+│   │   └── ProtectedRoute.jsx     → Route guard (redirect ke login jika no session)
+│   ├── hooks/
+│   │   ├── useAuth.js             → Auth state management
+│   │   ├── useTransactions.js     → Fetch + cache transaksi
+│   │   └── useReports.js          → Fetch data laporan keuangan
+│   ├── utils/
+│   │   ├── api.js                 → Semua fetch() calls ke Vercel API endpoints
+│   │   ├── formatRupiah.js        → Format angka ke IDR (Rp 1.234.567)
+│   │   └── dateHelpers.js         → Helper tanggal, periode, format WIB
+│   ├── context/
+│   │   └── AppContext.jsx         → Global state (periode aktif, user info)
+│   ├── App.jsx                    → Root komponen + React Router setup
+│   └── main.jsx                   → Vite entry point
+│
+├── shared/                        ← Python utilities (dipakai semua api/)
+│   ├── __init__.py
+│   ├── db.py                      → Supabase client init (pakai port 6543 PgBouncer)
+│   ├── auth.py                    → HMAC token generate & verify
+│   ├── doc_number.py              → Auto-generate doc number (KK-2026-06-001)
+│   ├── validator.py               → Input parsing: 25k→25000, 2jt→2000000
+│   └── period.py                  → Period lock checker sebelum POST
+│
+├── db/                            ← SQL migration files (run sekuensial di Supabase)
+│   ├── 01_schema.sql              → CREATE TABLE 13 tabel
+│   ├── 02_views.sql               → account_balances + monthly_summary views
+│   ├── 03_seed_coa.sql            → 74 akun COA
+│   ├── 04_seed_bot.sql            → bot_categories, bot_aliases, bot_settings
+│   ├── 05_seed_transfer_fees.sql  → transfer_fee_rules (10 rules)
+│   └── 06_seed_periods.sql        → Seed periode awal (Jun 2026+)
+│
+├── tests/
+│   ├── test_db.py                 → Test koneksi Supabase
+│   ├── test_bot.py                → Test bot handlers
+│   └── test_api.py                → Test API endpoints
+│
+├── scripts/
+│   ├── setup_db.py                → Jalankan semua SQL migrations
+│   ├── setup_webhook.py           → Register Telegram webhook URL ke Telegram API
+│   └── backup_db.py               → Trigger manual backup
+│
+├── .github/
+│   └── workflows/
+│       └── keepalive.yml          → Cron daily: ping Supabase + backup
+│
+├── docs/
+│   ├── FinTrack_ProjectDoc.docx   ← Dokumen ini
+│   └── CHEATSHEET.md
+│
+├── index.html                     ← Vite entry HTML
+├── package.json                   ← React, Vite, React Router, Recharts
+├── vite.config.js                 ← Vite config + proxy /api untuk dev
+├── vercel.json                    ← Build config + SPA routing
+├── requirements.txt               ← python-telegram-bot, supabase, httpx
+├── .env                           ← Local secrets (gitignored)
+├── .env.example                   ← Template semua env vars
+├── .gitignore
+├── CHEATSHEET.md                  ← Quick reference commands
+├── DEPLOY.md                      ← Step-by-step deployment guide
+└── README.md
+2.1 File Konfigurasi Kunci
+FILE
+ISI KRITIS
+vercel.json
+builds: Python runtime untuk api/, static-build untuk package.json. routes: /api/(.*) + catch-all /(.*) → /index.html
+requirements.txt
+python-telegram-bot==21.6 | supabase==2.9.0 | python-dotenv==1.0.1 | httpx==0.27.2
+package.json
+react@18 | react-dom@18 | react-router-dom@6 | recharts | @vitejs/plugin-react | vite@5
+.env
+TELEGRAM_BOT_TOKEN | SUPABASE_URL | SUPABASE_SERVICE_KEY | AUTH_SECRET | OWNER_TELEGRAM_ID
+vite.config.js
+proxy: { /api: { target: http://localhost:3000 } } untuk local dev. HMR config.
+shared/db.py
+Koneksi ke Supabase port 6543 (PgBouncer, bukan 5432) + ?pgbouncer=true di connection string
+3. DATABASE SCHEMA (13 Tabel + 2 Views)
+CREATE ORDER: chart_of_accounts → periods → sequences → transactions → journal_lines
+bot_categories → bot_category_accounts → bot_aliases → bot_settings
+bot_state → transfer_fee_rules → auth_tokens → audit_log
+Semua amounts: BIGINT (rupiah bulat, no decimal). Timestamps: TIMESTAMPTZ (UTC, display WIB +7).
+1. chart_of_accounts
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+code
+VARCHAR(10)
+PK
+Kode: 1110, 5110, 9999
+parent_code
+VARCHAR(10)
+FK self
+Parent (null=level 1)
+level
+SMALLINT
+1/2/3
+1=kelas, 2=kelompok, 3=leaf (postable)
+account_name
+VARCHAR(100)
+NOT NULL
+Nama akun di level ini
+account_type
+VARCHAR(20)
+CHECK
+aset/liabilitas/ekuitas/pendapatan/beban
+normal_balance
+VARCHAR(10)
+CHECK
+debit atau credit
+is_header
+BOOLEAN
+NOT NULL
+true=level 1&2, tidak bisa diposting
+is_active
+BOOLEAN
+DEFAULT true
+false=disembunyikan dari menu bot
+display_order
+SMALLINT
+DEFAULT 0
+Urutan tampil di keyboard Telegram
+notes
+TEXT
+nullable
+Ex: DORMANT—bisnis
+2. periods
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+year
+SMALLINT
+PK part
+Tahun: 2026, 2027
+month
+SMALLINT
+PK part, 1-12
+Bulan: 1-12
+is_locked
+BOOLEAN
+DEFAULT false
+true=tidak bisa input di periode ini
+locked_at
+TIMESTAMPTZ
+nullable
+Waktu dikunci via /lock
+3. sequences
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+doc_type
+VARCHAR(5)
+PK part
+OB/KK/KM/TR/JU/RV
+year
+SMALLINT
+PK part
+Tahun
+month
+SMALLINT
+PK part
+Bulan (reset tiap bulan)
+last_seq
+INTEGER
+DEFAULT 0
+Counter di-increment atomik saat generate doc
+4. transactions
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+doc_number
+VARCHAR(25)
+PK
+Format: TYPE-YYYY-MM-NNN (KK-2026-06-001)
+doc_type
+VARCHAR(5)
+NOT NULL
+OB/KK/KM/TR/JU/RV
+transaction_date
+DATE
+NOT NULL
+Tanggal akuntansi (bisa backdated)
+period_year
+SMALLINT
+NOT NULL
+Derived dari transaction_date
+period_month
+SMALLINT
+NOT NULL
+Derived dari transaction_date
+description
+TEXT
+nullable
+Keterangan dokumen
+status
+VARCHAR(10)
+POSTED/REVERSED
+POSTED=aktif, REVERSED=sudah di-reverse
+is_reversal
+BOOLEAN
+DEFAULT false
+true=dokumen RV (reverse entry)
+reversal_of_doc
+VARCHAR(25)
+FK self, nullable
+FK ke doc yang di-reverse
+input_source
+VARCHAR(20)
+telegram/dashboard/system
+Sumber input
+created_at
+TIMESTAMPTZ
+DEFAULT NOW()
+Waktu record dibuat di sistem
+FK
+—
+FOREIGN KEY
+(period_year, period_month) → periods(year, month)
+5. journal_lines
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+id
+BIGSERIAL
+PK auto
+Auto-increment ID
+doc_number
+VARCHAR(25)
+FK transactions
+Dokumen induk
+line_order
+SMALLINT
+DEFAULT 1
+Urutan baris dalam dokumen
+account_code
+VARCHAR(10)
+FK chart_of_accounts
+Akun yang di-debit/kredit
+debit_amount
+BIGINT
+≥0
+Jumlah debit (0 jika baris kredit)
+credit_amount
+BIGINT
+≥0
+Jumlah kredit (0 jika baris debit)
+CHECK
+—
+one_side_only
+(debit>0 AND credit=0) OR (debit=0 AND credit>0)
+6. bot_categories
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+id
+SERIAL
+PK
+Auto ID
+name
+VARCHAR(50)
+NOT NULL
+Konsumsi, Transport, dll
+emoji
+VARCHAR(10)
+nullable
+Emoji tombol: 🍔 🚌 📱
+category_type
+VARCHAR(10)
+expense/income
+Tipe menu
+parent_id
+INTEGER
+FK self, nullable
+Sub-kategori (null=top level)
+display_order
+SMALLINT
+DEFAULT 0
+Urutan tombol
+is_active
+BOOLEAN
+DEFAULT true
+Tampil/sembunyi
+7. bot_category_accounts
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+category_id
+INTEGER
+PK, FK bot_categories
+ID kategori
+account_code
+VARCHAR(10)
+PK, FK chart_of_accounts
+Kode COA
+display_order
+SMALLINT
+DEFAULT 0
+Urutan sub-menu
+8. bot_aliases
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+alias
+VARCHAR(50)
+PK
+Nama shortcut: makan, pulsa, kos
+account_code
+VARCHAR(10)
+FK chart_of_accounts
+Kode akun tujuan
+created_at
+TIMESTAMPTZ
+DEFAULT NOW()
+Waktu dibuat
+9. bot_settings (Key-Value Config)
+KEY
+VALUE DEFAULT
+KETERANGAN
+default_expense_source
+1130
+Akun sumber default pengeluaran (SeaBank)
+default_income_dest
+1120
+Akun tujuan default pemasukan (BNI)
+kas_kecil_account
+1130
+Akun kas kecil imprest (SeaBank)
+kas_kecil_target
+500000
+Target balance kas kecil = Rp 500.000
+kas_kecil_source
+1120
+Sumber pengisian kas kecil = BNI
+savings_account
+1140
+Akun tabungan TBD
+auth_token_expiry_mins
+60
+Expiry magic link dashboard (menit)
+session_days
+30
+Durasi session browser (hari)
+state_timeout_mins
+30
+Timeout bot conversation state (menit)
+bi_fast_fee
+2500
+Fee BI-Fast default = Rp 2.500
+owner_telegram_id
+[ISI SAAT SETUP]
+Telegram ID pemilik — whitelist auth bot
+10. bot_state
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+user_id
+BIGINT
+PK
+Telegram user ID
+state
+VARCHAR(50)
+DEFAULT IDLE
+State aktif percakapan
+state_data
+JSONB
+nullable
+Data temp flow (category_id, amount, account_code, dst)
+updated_at
+TIMESTAMPTZ
+DEFAULT NOW()
+Timeout: NOW()-updated_at > 30 menit → reset IDLE
+Daftar State Machine
+STATE
+KETERANGAN
+IDLE
+Tidak ada flow aktif — tampilkan main menu
+EXPENSE_CATEGORY
+Menunggu pilih kategori utama pengeluaran
+EXPENSE_SUBCATEGORY
+Menunggu pilih sub-akun dari kategori
+EXPENSE_AMOUNT
+Menunggu input nominal (25000 / 25k / 25rb)
+EXPENSE_DESC
+Menunggu input keterangan atau /skip
+EXPENSE_SOURCE
+Menunggu pilih akun sumber pembayaran
+EXPENSE_PREVIEW
+Tampil preview jurnal — menunggu konfirmasi
+INCOME_CATEGORY → INCOME_PREVIEW
+Flow pemasukan (struktur sama dengan expense)
+TRANSFER_SOURCE → TRANSFER_PREVIEW
+Flow transfer antar akun + auto-calc fee
+JOURNAL_DEBIT → JOURNAL_PREVIEW
+Jurnal manual adjusting entry
+SETUP_BNI → SETUP_CONFIRM
+Opening balance wizard (first-time setup)
+ALIAS_ADD_NAME → ALIAS_ADD_ACCOUNT
+Tambah alias baru via bot
+11. transfer_fee_rules
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+from_account
+VARCHAR(10)
+PK, FK COA
+Akun sumber
+to_account
+VARCHAR(10)
+PK, FK COA
+Akun tujuan
+fee_amount
+BIGINT
+DEFAULT 0
+Biaya transfer (Rp)
+fee_account
+VARCHAR(10)
+FK COA, nullable
+Akun beban fee (5820)
+method_label
+VARCHAR(50)
+nullable
+BI-Fast / Sesama BNI / dll
+Transfer Fee Rules — Initial Data
+FROM
+TO
+FEE
+METODE
+NOTE
+1120 BNI
+1120 BNI
+Rp 0
+Sesama BNI
+Gratis
+1130 SeaBank
+1130 SeaBank
+Rp 0
+Sesama SeaBank
+Gratis
+1120 BNI
+1130 SeaBank
+Rp 2.500
+BI-Fast
+Dikreditkan ke 5820
+1130 SeaBank
+1120 BNI
+Rp 0
+Gratis SeaBank
+Dalam kuota 100x/bulan
+1120 BNI
+1140 Tabungan
+Rp 2.500
+BI-Fast
+Dikreditkan ke 5820
+1140 Tabungan
+1120 BNI
+Rp 0
+Transfer Balik
+Asumsi gratis
+1110 Tunai
+1120 BNI
+Rp 0
+Setor Tunai
+1110 Tunai
+1130 SeaBank
+Rp 0
+Setor Tunai
+1120 BNI
+1110 Tunai
+Rp 0
+Tarik Tunai BNI
+1130 SeaBank
+1110 Tunai
+Rp 0
+Tarik Tunai SeaBank
+12. auth_tokens
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+token
+VARCHAR(200)
+PK
+HMAC-SHA256 hash token
+created_at
+TIMESTAMPTZ
+DEFAULT NOW()
+Waktu generate
+expires_at
+TIMESTAMPTZ
+NOT NULL
+now()+60 menit
+used_at
+TIMESTAMPTZ
+nullable
+null=belum digunakan
+is_used
+BOOLEAN
+DEFAULT false
+true=token hangus (single-use)
+13. audit_log
+KOLOM
+TIPE
+CONSTRAINT
+KETERANGAN
+id
+BIGSERIAL
+PK
+Auto ID, tidak pernah berubah
+table_name
+VARCHAR(50)
+NOT NULL
+Tabel yang berubah
+record_id
+VARCHAR(100)
+NOT NULL
+ID record (doc_number atau line id)
+action
+VARCHAR(10)
+INSERT/UPDATE
+DELETE tidak boleh ada di transactions/lines
+old_data
+JSONB
+nullable
+Nilai sebelum (null untuk INSERT)
+new_data
+JSONB
+nullable
+Nilai sesudah
+changed_at
+TIMESTAMPTZ
+DEFAULT NOW()
+Waktu perubahan
+3.1 Database Views
+View: account_balances
+Query saldo realtime per akun. Dipanggil oleh /saldo di bot dan BalanceCard di dashboard.
+CREATE VIEW account_balances AS
+SELECT coa.code, coa.account_name, coa.account_type, coa.normal_balance,
+COALESCE(SUM(jl.debit_amount),  0) AS total_debit,
+COALESCE(SUM(jl.credit_amount), 0) AS total_credit,
+CASE WHEN coa.normal_balance = 'debit'
+THEN COALESCE(SUM(jl.debit_amount),0) - COALESCE(SUM(jl.credit_amount),0)
+ELSE COALESCE(SUM(jl.credit_amount),0) - COALESCE(SUM(jl.debit_amount),0)
+END AS balance
+FROM chart_of_accounts coa
+LEFT JOIN journal_lines jl ON coa.code = jl.account_code
+LEFT JOIN transactions t   ON jl.doc_number = t.doc_number AND t.status = 'POSTED'
+WHERE coa.is_header = false AND coa.is_active = true
+GROUP BY coa.code, coa.account_name, coa.account_type, coa.normal_balance;
+View: monthly_summary
+Agregasi income vs expense per bulan. Dipanggil /bulan di bot dan Reports page di dashboard.
+CREATE VIEW monthly_summary AS
+SELECT t.period_year, t.period_month, coa.account_type,
+COALESCE(SUM(jl.debit_amount),  0) AS total_debit,
+COALESCE(SUM(jl.credit_amount), 0) AS total_credit
+FROM transactions t
+JOIN journal_lines jl ON t.doc_number = jl.doc_number
+JOIN chart_of_accounts coa ON jl.account_code = coa.code
+WHERE t.status = 'POSTED' AND coa.is_header = false
+GROUP BY t.period_year, t.period_month, coa.account_type;
+4. ARSITEKTUR SISTEM
+4.1 Full Stack Overview
+LAYER
+KOMPONEN
+TEKNOLOGI
+KOMUNIKASI
+Input
+Telegram Bot
+python-telegram-bot v21
+Rafi → Telegram → POST webhook
+Bot Handler
+Vercel Serverless (Python)
+api/telegram/webhook.py
+Webhook → Handler → Supabase
+API
+Vercel Serverless (Python)
+api/reports/*, api/auth/*
+Browser → GET/POST → Supabase
+Database
+Supabase PostgreSQL
+PostgreSQL 15 + pgBouncer
+supabase-py client, port 6543
+Frontend
+React SPA
+React 18 + Vite + Recharts
+Browser → fetch Vercel API
+Auth
+Custom HMAC
+Python hmac + SHA256
+Telegram → token → browser cookie
+CI/CD
+GitHub Actions
+YAML + pg_dump
+Push → Vercel deploy. Cron → backup
+4.2 Data Flow Overview
+📱 INPUT PATH:  Rafi → Telegram Bot → POST /api/telegram/webhook → Bot Handler → Supabase INSERT
+🖥️  OUTPUT PATH: Browser → GET /api/reports/* → Supabase View → JSON → React Dashboard render
+🔐  AUTH PATH:  /getlink (bot) → HMAC token → URL → Browser → /api/auth/verify → httpOnly Cookie
+🔄  CONSISTENCY: Telegram & Dashboard akses DB yang sama → data selalu konsisten & realtime
+4.3 API Endpoints
+METHOD
+ENDPOINT
+DESKRIPSI
+AUTH
+POST
+/api/telegram/webhook
+Menerima semua update dari Telegram
+Telegram signature
+GET
+/api/transactions
+List transaksi (filter: period, account, type, limit)
+Session cookie
+GET
+/api/accounts
+Daftar COA aktif (filter: type, is_header=false)
+Session cookie
+GET
+/api/reports/balance
+Saldo semua akun via account_balances view
+Session cookie
+GET
+/api/reports/monthly
+Summary bulanan via monthly_summary view
+Session cookie
+GET
+/api/reports/ledger
+Buku besar per akun (filter: account, period)
+Session cookie
+GET
+/api/reports/trial-balance
+Trial balance per periode
+Session cookie
+GET
+/api/reports/income-statement
+Laba Rugi per periode
+Session cookie
+POST
+/api/auth/verify
+Token → verify → set session cookie 30 hari
+Token in body
+GET
+/api/auth/me
+Cek session aktif → {logged_in: true/false}
+Session cookie
+4.4 Environment Variables
+VARIABLE
+NILAI CONTOH
+DIPAKAI DI
+KETERANGAN
+TELEGRAM_BOT_TOKEN
+7234567890:AAF...xyz
+api/ (bot)
+Token dari @BotFather
+SUPABASE_URL
+https://abc123.supabase.co
+api/ semua
+Project URL dari Supabase dashboard
+SUPABASE_SERVICE_KEY
+eyJhbGciOiJIUzI1N...
+api/ semua
+Service role key (BUKAN anon key!)
+AUTH_SECRET
+64-char random hex string
+api/auth/
+Secret untuk HMAC token signature
+OWNER_TELEGRAM_ID
+123456789
+api/ (bot)
+Telegram user ID pemilik — whitelist
+NEXT_PUBLIC_API_URL
+https://fintrack.vercel.app
+src/ frontend
+Base URL API (set di Vercel env vars)
+5. BUILD FLOWS — HORIZONTAL PIPELINE
+5.1 Flow 3 — Pengeluaran (Expense) End-to-End
+Alur paling sering digunakan. Input harian pengeluaran via Telegram → double-entry journal ke Supabase.
+LAYER / STEP
+1. Tap Menu
+2. Pilih Kategori
+3. Pilih Akun
+4. Input Nominal
+5. Input Ket.
+6. Pilih Sumber
+7. Preview
+8. Posting
+👤 USER
+Tap [💸 Pengeluaran] di main menu
+Tap [🍔 Konsumsi]
+Tap [Makan Harian - 5110]
+Ketik: 25000 (atau 25k/25rb)
+Ketik: beli es (atau /skip)
+Tap [🌊 SeaBank]
+Review jurnal sebelum posting
+Tap [✅ Posting]
+📱 TELEGRAM
+Send callback query ke webhook
+Send callback_query
+Send callback_query
+Send text message
+Send text message
+Send callback_query
+<- Send preview + keyboard
+Send callback_query
+⚡ BOT (Vercel)
+Check whitelist (OWNER_TELEGRAM_ID), load bot_categories dari DB
+Load sub-accounts dari bot_category_accounts + COA
+Store account_code=5110, state=EXPENSE_AMOUNT di bot_state
+Validate: parse_amount(), cek >0, cek is_header=false, store amount
+Store description di state_data, state=EXPENSE_SOURCE
+Cek period lock di DB
+Build preview: Dr 5110 Rp25rb / Cr 1130 Rp25rb + keyboard
+gen_doc_number→insert tx→insert lines×2→audit_log→query balance
+🗄️ SUPABASE
+SELECT bot_categories WHERE type=expense AND is_active=true ORDER BY display_order
+SELECT bca.*, coa.account_name FROM bot_category_accounts bca JOIN chart_of_accounts coa WHERE category_id=1
+UPDATE bot_state SET state=EXPENSE_AMOUNT, state_data={...}
+— (validation only, no DB write)
+UPDATE bot_state SET state=EXPENSE_SOURCE
+SELECT is_locked FROM periods WHERE year=2026 AND month=6
+— (state read only)
+UPDATE sequences; INSERT transactions; INSERT journal_lines×2; INSERT audit_log; SELECT account_balances
+Jurnal Terbentuk — Beli Es Rp 25.000 dari SeaBank
+DOC NUMBER
+DATE
+KODE
+NAMA AKUN
+DEBIT
+KREDIT
+KK-2026-06-001
+15 Jun 2026
+5110
+Makan Harian
+Rp 25.000
+—
+KK-2026-06-001
+15 Jun 2026
+1130
+SeaBank (Kas Kecil)
+—
+Rp 25.000
+5.2 Flow 4 — Pemasukan (Income) End-to-End
+Alur mencatat pemasukan (honor, gaji, bunga). Jurnal terbalik: Dr Kas/Bank, Cr Pendapatan.
+LAYER / STEP
+1. Tap Menu
+2. Pilih Kategori
+3. Pilih Akun
+4. Input Nominal
+5. Input Ket.
+6. Pilih Tujuan
+7. Preview
+8. Posting
+👤 USER
+Tap [💰 Pemasukan]
+Tap [💼 Honor/Upah]
+Tap [Honor/Upah - 4110]
+Ketik: 2000000 / 2jt
+Ketik: honor daimler / /skip
+Tap [🏦 BNI] (default)
+Review: Dr BNI / Cr Honor
+Tap [✅ Posting]
+📱 TELEGRAM
+Send callback query
+Send callback
+Send callback
+Send text
+Send text
+Send callback
+<- Send preview
+Send callback
+⚡ BOT (Vercel)
+Load income categories
+Load sub-akun pendapatan
+Store account_code=4110, state=INCOME_AMOUNT
+Validate parse_amount() → 2000000
+Store description, state=INCOME_DEST
+Set dest=1120, load default dari bot_settings, cek period
+Build preview: Dr 1120 / Cr 4110
+gen_doc KM-xxx, insert records, query balance BNI
+🗄️ SUPABASE
+SELECT bot_categories WHERE type=income AND is_active=true
+SELECT bca.*, coa.account_name WHERE category_id=income_id
+UPDATE bot_state
+— (validation)
+UPDATE bot_state
+SELECT bot_settings WHERE key=default_income_dest; SELECT is_locked FROM periods
+— (state read)
+UPDATE sequences; INSERT transactions + journal_lines×2 + audit_log; SELECT account_balances WHERE code=1120
+Jurnal Terbentuk — Honor Rp 2.000.000 masuk BNI
+DOC NUMBER
+DATE
+KODE
+NAMA AKUN
+DEBIT
+KREDIT
+KM-2026-06-001
+15 Jun 2026
+1120
+Bank BNI (Kas Besar)
+Rp 2.000.000
+—
+KM-2026-06-001
+15 Jun 2026
+4110
+Honor / Upah Proyek
+—
+Rp 2.000.000
+5.3 Flow 5A — Transfer Umum (BNI → Tabungan)
+Transfer antar akun sendiri. Sistem auto-query fee dari transfer_fee_rules dan tambah baris fee di jurnal.
+LAYER / STEP
+1. Tap Transfer
+2. Pilih Jenis
+3. Input Nominal
+4. Load Fee
+5. Preview + Fee
+6. Posting
+7. Konfirmasi
+👤 USER
+Tap [🔄 Transfer]
+Tap [💰 Ke Tabungan]
+Ketik: 500000
+— (background)
+Review: 500rb transfer + fee 2.500
+Tap [✅ Posting]
+Lihat saldo BNI terbaru
+📱 TELEGRAM
+Send callback
+Send callback
+Send text
+—
+<- Preview
+Send callback
+<- Reply
+⚡ BOT (Vercel)
+Show transfer type menu
+Set from=1120 (BNI), to=1140 (Tabungan)
+Validate, store amount
+Query fee rule BNI→Tabungan
+Build: Dr 1140 Rp500rb + Dr 5820 Rp2500 / Cr 1120 Rp502.500
+gen_doc TR-xxx, insert 3 journal lines (include fee line)
+Query updated BNI balance
+🗄️ SUPABASE
+— (static menu)
+— (dari menu config)
+— (validation)
+SELECT fee_amount, fee_account FROM transfer_fee_rules WHERE from=1120 AND to=1140
+— (state read)
+UPDATE sequences; INSERT transactions; INSERT journal_lines×3; INSERT audit_log
+SELECT balance FROM account_balances WHERE code=1120
+5.3B Flow 5B — Pengisian Kas Kecil (Imprest Auto-Hitung)
+SeaBank = kas kecil imprest dengan target Rp 500.000. Bot auto-hitung jumlah yang perlu diisi dari saldo saat ini.
+LAYER / STEP
+1. Tap Isi Kas Kecil
+2. Query Saldo
+3. Hitung Fill
+4. Preview
+5. Posting
+6. Konfirmasi
+👤 USER
+Tap [🔄 Isi Kas Kecil] dari menu Transfer
+— (background)
+— (background)
+Tap [✅ Posting]
+SeaBank: Rp 500.000 ✅
+📱 TELEGRAM
+Send callback
+—
+—
+<- Preview
+Send callback
+<- Reply
+⚡ BOT (Vercel)
+Load kas_kecil_target dari bot_settings
+Query saldo SeaBank saat ini
+fill = 500000 - current_balance. Ex: fill = 500000 - 85000 = 415000
+Build preview: Dr 1130 Rp415rb + Dr 5820 Rp2500 / Cr 1120 Rp417.500 + BI-Fast note
+gen_doc TR-xxx, insert transactions + 3 journal lines
+Query saldo SeaBank baru
+🗄️ SUPABASE
+SELECT value FROM bot_settings WHERE key=kas_kecil_target
+SELECT balance FROM account_balances WHERE code=1130
+— (Python computation)
+— (state read)
+UPDATE sequences; INSERT transactions; INSERT journal_lines×3; INSERT audit_log
+SELECT balance FROM account_balances WHERE code=1130
+Jurnal Imprest — Isi Rp 415.000 + Fee BI-Fast Rp 2.500
+DOC
+KODE
+NAMA AKUN
+DEBIT
+KREDIT
+KETERANGAN
+TR-2026-06-001
+1130
+SeaBank (Kas Kecil)
+Rp 415.000
+—
+Pengisian imprest kas kecil
+TR-2026-06-001
+5820
+Biaya Admin & Transfer
+Rp 2.500
+—
+Fee BI-Fast BNI→SeaBank
+TR-2026-06-001
+1120
+Bank BNI (Kas Besar)
+—
+Rp 417.500
+Sumber pengisian
+5.4 Flow 6 — Laporan via Telegram (/bulan, /hari, /recent, /saldo)
+Semua command laporan = read-only dari Supabase views. Tidak ada state machine panjang — langsung query dan reply.
+/bulan — Summary Bulanan
+LAYER / STEP
+1. /bulan Command
+2. Query Summary
+3. Query Detail
+4. Format + Send
+5. [◀️ Mei 2026]
+👤 USER
+Ketik /bulan atau tap [📊 Bulan Ini]
+— (background)
+— (background)
+Baca ringkasan + breakdown kategori
+Tap navigasi bulan sebelumnya
+📱 TELEGRAM
+Send message/callback
+—
+—
+<- Send formatted msg
+Send callback
+⚡ BOT (Vercel)
+Parse period dari pesan atau default=bulan ini
+Query monthly_summary view
+Query breakdown per akun beban
+Format angka IDR, emoji, total. Tambah tombol navigasi bulan
+Decrement month, re-query dengan period_month=5
+🗄️ SUPABASE
+— (parse only)
+SELECT * FROM monthly_summary WHERE period_year=2026 AND period_month=6
+SELECT jl.account_code, coa.account_name, SUM(debit) FROM journal_lines jl JOIN transactions t JOIN chart_of_accounts coa WHERE period=? AND account_type=beban GROUP BY account_code
+—
+Re-query monthly_summary WHERE period_month=5
+/saldo — Saldo Semua Akun
+LAYER / STEP
+1. /saldo Command
+2. Format + Send
+👤 USER
+Ketik /saldo atau tap [💳 Saldo]
+Lihat saldo semua akun
+📱 TELEGRAM
+Send message
+<- Send reply
+⚡ BOT (Vercel)
+Query account_balances view
+Group: Kas, Investasi, Utang. Format IDR. Hitung Net Worth.
+🗄️ SUPABASE
+SELECT * FROM account_balances WHERE account_type IN (aset,liabilitas) ORDER BY code
+—
+/recent — Transaksi Terakhir
+LAYER / STEP
+1. /recent [n]
+2. Format + Tap
+3. [📋 Detail]
+4. [↩️ Reverse]
+👤 USER
+Ketik /recent atau /recent 20
+Lihat list dengan tombol per baris
+Tap detail satu transaksi
+Tap reverse transaksi
+📱 TELEGRAM
+Send message
+<- Send list
+Send callback
+Send callback
+⚡ BOT (Vercel)
+Parse n (default=10, max=50)
+Setiap baris: [📋 Detail] [↩️ Reverse]
+Query semua journal_lines untuk doc tersebut
+Cek period lock → build RV preview → konfirmasi → INSERT RV doc
+🗄️ SUPABASE
+SELECT t.*, jl.* FROM transactions t JOIN journal_lines jl ORDER BY t.created_at DESC LIMIT n
+—
+SELECT * FROM journal_lines WHERE doc_number=KK-2026-06-001 ORDER BY line_order
+SELECT is_locked FROM periods; INSERT transactions+lines WHERE is_reversal=true, status=REVERSED on original
+5.5 Flow 7 — Authentication (/getlink + Dashboard Login)
+Custom HMAC token. Telegram bot = authentication factor. No password. No Supabase Auth (ada bug di magic link Supabase free tier).
+LAYER / STEP
+1. Request Link
+2. Send URL
+3. Klik Link
+4. Verify Token
+5. Redirect
+6. Re-visit
+👤 USER
+Ketik /getlink di Telegram
+Terima URL di Telegram
+Klik URL di browser (≤60 menit)
+— (server side)
+Dashboard terbuka ✅
+Buka dashboard (dalam 30 hari)
+📱 TELEGRAM
+Send message
+<- Bot reply URL
+—
+—
+—
+—
+⚡ BOT (Vercel)
+Verify user = OWNER_TELEGRAM_ID. Generate HMAC token.
+Format URL: https://fintrack.vercel.app/auth?t={token}
+POST /api/auth/verify receives token
+Jika valid: mark is_used=true, generate session cookie 30 hari
+Set-Cookie: session={jwt} httpOnly Secure. Redirect 302 /dashboard
+GET /api/auth/me → baca cookie → {logged_in:true}
+🗄️ SUPABASE
+INSERT auth_tokens (token, expires_at=now+60min, is_used=false)
+—
+SELECT * FROM auth_tokens WHERE token=? AND is_used=false AND expires_at>NOW()
+UPDATE auth_tokens SET is_used=true, used_at=NOW() WHERE token=?
+—
+— (cookie-based, no DB read setiap page load)
+Security Architecture
+ASPEK
+IMPLEMENTASI
+Token Generation
+HMAC-SHA256(AUTH_SECRET, f"{user_id}:{timestamp}") → tidak bisa dipalsukan tanpa AUTH_SECRET
+Single Use
+is_used=true setelah klik pertama — URL tidak bisa digunakan dua kali
+Expiry
+60 menit (konfigurasi via bot_settings.auth_token_expiry_mins)
+Cookie Security
+httpOnly + Secure + SameSite=Strict — tidak bisa diakses oleh JavaScript
+Session Duration
+30 hari (bot_settings.session_days) — login 1x per bulan via Telegram
+Whitelist
+Bot cek OWNER_TELEGRAM_ID — hanya pemilik bisa request link
+Bot Discovery
+Nama bot pakai random suffix — tidak mudah ditemukan orang lain
+5.6 Flow 8 — Dashboard React (Frontend)
+Single Page Application (SPA) di Vercel. React Router DOM v6 untuk navigasi. Semua data dari Vercel API endpoints. React tidak langsung akses Supabase.
+LAYER / STEP
+1. Load App
+2. Auth Gate
+3. Dashboard Load
+4. Render
+5. Navigate
+6. Laporan
+7. Ledger
+👤 USER
+Buka fintrack.vercel.app
+No session → Login.jsx tampil
+Session valid → Dashboard.jsx load
+Lihat: saldo cards + chart + tx terbaru
+Klik menu Jurnal/Laporan/COA
+Reports.jsx: pilih bulan + jenis
+Pilih akun → lihat semua mutasi
+📱 TELEGRAM
+—
+—
+—
+—
+—
+—
+—
+⚡ BOT (Vercel)
+ProtectedRoute mount → GET /api/auth/me → cek cookie
+Login.jsx: tampil instruksi "Ketik /getlink di Telegram"
+Parallel fetch: /api/reports/balance + /api/reports/monthly + /api/transactions?limit=10
+BalanceCard×3 + CategoryChart + TransactionTable render
+React Router navigate → halaman baru lazy-fetch data sendiri
+Fetch /api/reports/trial-balance + /api/reports/income-statement
+Fetch /api/reports/ledger?account=1120&year=2026&month=6
+🗄️ SUPABASE
+— (cookie check, no DB)
+—
+account_balances view + monthly_summary view + transactions JOIN journal_lines LIMIT 10
+—
+Fetch sesuai halaman (lazy load, bukan semua di-load sekaligus)
+Complex JOIN queries dengan period filter
+SELECT t.*, jl.* WHERE jl.account_code=1120 AND period=2026-06 ORDER BY transaction_date
+Pages & Components
+FILE
+ROUTE
+FUNGSI
+DATA SOURCE
+Login.jsx
+/login
+Instruksi getlink + cek session
+GET /api/auth/me
+Dashboard.jsx
+/dashboard
+Saldo + chart + tx terbaru
+GET /balance + /monthly + /transactions
+Journal.jsx
+/journal
+Semua jurnal, filter, sort, pagination
+GET /transactions?period=&type=&account=
+Ledger.jsx
+/ledger
+Buku besar per akun (select COA)
+GET /reports/ledger?account=&year=&month=
+Reports.jsx
+/reports
+Neraca, L/R, Trial Balance, pilih periode
+GET /trial-balance + /income-statement
+COA.jsx
+/coa
+COA tree + saldo per akun
+GET /accounts + /reports/balance
+Settings.jsx
+/settings
+Lihat alias + default akun (baca-saja v1)
+GET /accounts
+ProtectedRoute.jsx
+wrapper
+Redirect /login jika no session
+GET /api/auth/me tiap mount
+React Router Setup (App.jsx)
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+// Semua yang di dalam <ProtectedRoute> akan check session dulu
+<BrowserRouter>
+<Routes>
+<Route path="/login"   element={<Login />} />
+<Route path="/auth"    element={<AuthCallback />} />  {/* /auth?t=TOKEN */}
+<Route element={<ProtectedRoute />}>
+<Route path="/dashboard" element={<Dashboard />} />
+<Route path="/journal"   element={<Journal />} />
+<Route path="/ledger"    element={<Ledger />} />
+<Route path="/reports"   element={<Reports />} />
+<Route path="/coa"       element={<COA />} />
+<Route path="/settings"  element={<Settings />} />
+<Route path="/"          element={<Navigate to="/dashboard" />} />
+</Route>
+</Routes>
+</BrowserRouter>
+5.7 Flow 9 — Laporan Keuangan (Trial Balance, Neraca, L/R)
+Laporan keuangan formal dibangun dari journal_lines + chart_of_accounts. Tersedia di Reports.jsx (dashboard) dan ringkasan di Telegram via /bulan.
+LAYER / STEP
+1. Buka Reports
+2. Fetch Data
+3. Trial Balance
+4. Neraca
+5. Laba Rugi
+6. Display
+👤 USER
+Klik [📊 Reports] → pilih jenis + periode
+— (auto fetch)
+Lihat semua akun + saldo
+Lihat Neraca (Balance Sheet)
+Lihat Income Statement
+Tabel laporan dengan subtotal per kategori
+📱 TELEGRAM
+—
+—
+—
+—
+—
+—
+⚡ BOT (Vercel)
+Reports.jsx: render period picker + jenis laporan selector
+GET /api/reports/trial-balance?year=2026&month=6
+JOIN dengan COA, hitung balance per akun, verify SUM(debit)=SUM(kredit)
+Filter account_type: aset, liabilitas, ekuitas. Hitung subtotal + grand total.
+Filter: pendapatan (kredit normal) vs beban (debit normal). Net = Laba/Rugi.
+Format tabel: kode | nama | debit | kredit | saldo. Subtotal per group.
+🗄️ SUPABASE
+—
+SELECT jl.account_code, SUM(debit) AS td, SUM(credit) AS tc FROM journal_lines jl JOIN transactions t ON ... WHERE period<=selected AND t.status=POSTED GROUP BY account_code
+JOIN chart_of_accounts ON code → sort by code → verify balance in Python
+— (filter dari trial balance data, no new DB query)
+— (filter dari trial balance data)
+—
+Contoh Output Laba Rugi — Juni 2026
+KODE
+NAMA AKUN
+DEBIT
+KREDIT
+SALDO
+4000
+PENDAPATAN
+—
+—
+—
+4110
+Honor / Upah Proyek
+—
+Rp 2.000.000
+Rp 2.000.000 (Cr)
+4310
+Bunga Tabungan
+—
+Rp 5.000
+Rp 5.000 (Cr)
+TOTAL PENDAPATAN
+—
+Rp 2.005.000
+5000
+BEBAN PERSONAL
+—
+—
+—
+5110
+Makan Harian
+Rp 280.000
+—
+Rp 280.000
+5210
+BBM / Bensin
+Rp 112.000
+—
+Rp 112.000
+5610
+Kos / Kontrakan
+Rp 300.000
+—
+Rp 300.000
+5820
+Biaya Admin & Transfer
+Rp 5.000
+—
+Rp 5.000
+TOTAL BEBAN
+Rp 697.000
+Rp 697.000
+NET LABA BERJALAN
+Rp 1.308.000 ✅ LABA
+6. TELEGRAM BOT — COMMAND REFERENCE
+6.1 Text Commands
+COMMAND
+SYNTAX
+STATE
+DESKRIPSI
+/start
+—
+Reset→IDLE
+Welcome + cek first-time setup (opening balance)
+/menu
+—
+IDLE
+Tampilkan main menu inline keyboard
+/saldo
+—
+IDLE
+Balance semua akun aktif (instant)
+/hari
+—
+IDLE
+Summary hari ini (semua transaksi hari ini)
+/bulan
+—
+IDLE
+Summary bulan ini dengan breakdown per kategori
+/bulan YYYY-MM
+/bulan 2026-05
+IDLE
+Summary bulan spesifik
+/recent
+—
+IDLE
+10 transaksi terakhir dengan tombol detail + reverse
+/recent n
+/recent 20
+IDLE
+n transaksi terakhir (max 50)
+/getlink
+—
+IDLE
+Generate HMAC token → URL dashboard (expire 60 menit)
+/lock YYYY-MM
+/lock 2026-06
+IDLE
+Kunci periode — confirm sebelum eksekusi
+/setup
+—
+→SETUP_BNI
+Opening balance wizard (first-time atau reset)
+/jurnal
+—
+→JOURNAL_DEBIT
+Jurnal manual untuk adjusting entry / 2-line entry
+/reverse DOC
+/reverse KK-2026-06-001
+IDLE
+Reverse transaksi → buat RV doc di tanggal hari ini
+/reset
+—
+→IDLE
+Clear conversation state, kembali ke IDLE
+/back
+—
+Pop state
+Mundur satu step dalam flow yang sedang aktif
+/help
+—
+IDLE
+Daftar semua command + penjelasan singkat
+6.2 Inline Keyboard Menu Hierarchy
+MENU UTAMA
+SUB-MENU / ISIAN
+FLOW
+💸 Pengeluaran
+9 kategori (Konsumsi, Transport, Komunikasi, Tempat Tinggal, Kesehatan, Pengembangan, Sosial & Keluarga, Finansial, Lain-lain)
+Kategori → Sub-akun → Nominal → Ket → Sumber → Preview → Posting
+💰 Pemasukan
+5 kategori (Honor/Upah, Gaji, Bunga/Investasi, Dividen, Lain-lain Pendapatan)
+Kategori → Sub-akun → Nominal → Ket → Tujuan → Preview → Posting
+🔄 Transfer
+Isi Kas Kecil (imprest auto-hitung), Ke Tabungan, Dari Tabungan, Transfer Lainnya
+Imprest: auto | Umum: Sumber → Tujuan → Nominal → Preview (+ fee) → Posting
+📊 Laporan
+Hari Ini, Bulan Ini, Bulan Lalu, Pilih Bulan (◀️ ▶️ navigasi)
+Query → Format → Reply dengan tombol detail dan navigasi
+💳 Saldo
+—
+Langsung query account_balances dan tampilkan group by type
+⚙️ Pengaturan
+Default Akun, Kelola Alias, Lihat COA, Kunci Periode, Backup Manual
+Masing-masing sub-flow sendiri
+6.3 Amount Parsing Rules
+INPUT USER
+HASIL PARSING
+STATUS
+25000
+Rp 25.000
+✅ Valid
+25.000
+Rp 25.000 (strip titik)
+✅ Valid
+25,000
+Rp 25.000 (strip koma)
+✅ Valid
+25k
+Rp 25.000 (k = ribu)
+✅ Valid
+25rb
+Rp 25.000 (rb = ribu)
+✅ Valid
+25jt
+Rp 25.000.000 (jt = juta)
+✅ Valid
+2,5jt
+Rp 2.500.000 (desimal + juta)
+✅ Valid
+0 / -25000
+—
+❌ "Nominal harus > 0"
+"dua puluh lima"
+—
+❌ "Format tidak valid. Contoh: 25000 atau 25k"
+7. BLINDSPOT REVIEW & KNOWN ISSUES
+Review sebelum mulai build. Setiap item harus di-address pada fase yang disebutkan.
+7.1 CRITICAL — Harus Disolve Sebelum Deploy
+#
+BLINDSPOT
+RISIKO
+SOLUSI
+B1
+Supabase koneksi port 5432 (direct) bisa exhausted di serverless
+Pool habis, DB tidak bisa diakses
+Pakai port 6543 (PgBouncer) + ?pgbouncer=true di connection string di shared/db.py
+B2
+Telegram webhook perlu didaftarkan manual setelah deploy ke Vercel
+Bot tidak menerima pesan sama sekali
+Jalankan scripts/setup_webhook.py setelah setiap deploy: POST api.telegram.org/botTOKEN/setWebhook?url=...
+B3
+React SPA routing: refresh /journal → 404 di Vercel tanpa catch-all route
+User tidak bisa bookmark atau refresh halaman
+Di vercel.json: routes [-1] = {"src":"/(.*)", "dest":"/index.html"} — HARUS paling akhir
+B4
+bot_state race condition: 2 Telegram updates bersamaan bisa corrupt state
+Bot double-post atau state kacau
+Wrap read+write bot_state dalam Supabase transaction. Gunakan SELECT FOR UPDATE atau upsert atomic.
+B5
+Auth cookie httpOnly tidak bisa dibaca JavaScript di React
+ProtectedRoute tidak bisa cek apakah user logged in
+Wajib ada /api/auth/me endpoint yang return {logged_in: true/false} — di-call saat mount
+B6
+/setup wizard bisa double-run → Opening Balance di-post dua kali
+Saldo awal salah (double)
+Sebelum run /setup: cek existence OB document. Jika ada → tampil info OB sudah ada + saldo saat ini.
+B7
+Vercel Python function size limit 250MB — python-telegram-bot cukup besar
+Deploy gagal atau cold start lambat
+Test deploy dulu tanpa semua deps. Kalau terlalu besar: ganti ke pyTelegramBotAPI atau raw httpx.
+7.2 IMPORTANT — Selesaikan Sebelum v1 Production
+#
+BLINDSPOT
+SOLUSI
+B8
+Supabase free tier: pause setelah 7 hari inactivity
+GitHub Actions keepalive.yml — ping Supabase REST endpoint setiap 3 hari (cron)
+B9
+Supabase free tier tidak ada auto-backup
+GitHub Actions daily: pg_dump via Supabase DB URL → commit ke private repo. Setup setelah v1 live.
+B10
+Local dev: Telegram tidak bisa kirim ke localhost
+Pakai ngrok tunnel (scripts/ngrok.ps1). Atau: dev mode pakai polling, prod pakai webhook.
+B11
+Vercel.json HARUS specify Python runtime version secara eksplisit
+Tambah: "config": {"runtime": "python3.12"} di builds config untuk api/
+B12
+React komponen re-fetch setiap navigate (tidak ada caching)
+Tambah in-memory cache di useTransactions.js dengan TTL 30 detik. Jangan pakai library dulu.
+B13
+API endpoints belum ada pagination untuk transaksi
+Tambah ?limit=50&offset=0 dari awal. Mudah di-extend nanti tapi harus planned dari awal.
+B14
+Period lock tidak mencegah reverse transaksi di periode terkunci
+Ini BENAR secara akuntansi. RV dicatat di TANGGAL HARI INI (bukan tanggal transaksi asli). Tidak perlu diubah.
+B15
+Penyusutan aset (1910/1920) — akun ada tapi saldo selalu 0 di v1 personal
+Keputusan: skip penyusutan untuk personal. Akun ada sebagai template bisnis. /jurnal manual jika diperlukan.
+7.3 Catatan Keputusan Arsitektur
+📌 Transfer ke keluarga (ortu/adik) = PENGELUARAN (5710 Kiriman ke Keluarga), BUKAN transfer internal.
+Ini beda dari transfer BNI→SeaBank yang = internal transfer (tidak ada biaya dalam L/R).
+📌 Penyusutan: skip untuk personal. Akun 1910/1920 tersedia di COA untuk template bisnis.
+Saldo = 0 kecuali user jurnal manual (tidak otomatis).
+📌 /jurnal manual = 2-line entry only di v1. Untuk adjusting entry yang lebih kompleks pakai dashboard.
+📌 SeaBank imprest: target Rp 500.000 = FIXED (disimpan di bot_settings, bisa diubah via /settings).
+"Isi Kas Kecil" auto-hitung selisih ke target. Kalau saldo sudah 500rb+, flow ini disabled.
+📌 CORS: saat local dev, Vite proxy /api ke localhost:3000. Saat production di Vercel = same domain = no CORS issue.
+8. DEPLOYMENT GUIDE
+8.1 Urutan Setup (One-Time)
+STEP
+AKSI
+TOOL / COMMAND
+1
+Buat Supabase project baru (free, no CC)
+Browser: app.supabase.com → New Project
+2
+Jalankan SQL migrations di Supabase SQL Editor (urutan 01→06)
+Copy-paste db/01_schema.sql s.d. db/06_seed_periods.sql
+3
+Buat GitHub repo (private) dan push kode
+git init && git push origin main
+4
+Import repo ke Vercel
+Browser: vercel.com/new → Import Git Repository
+5
+Set semua environment variables di Vercel Dashboard
+Settings → Environment Variables → add all from .env.example
+6
+Deploy pertama (otomatis setelah add env vars)
+Push ke main atau trigger manual di Vercel
+7
+Register Telegram webhook URL ke Telegram API
+python scripts/setup_webhook.py (setelah dapat Vercel URL)
+8
+Setup GitHub Secrets untuk Actions
+GitHub → Settings → Secrets → add SUPABASE_URL + API_KEY + DB_URL
+9
+Aktifkan keepalive + backup workflow
+Push keepalive.yml → Actions auto-aktif
+10
+Running /setup di Telegram Bot
+Buka Telegram, ketik /start → /setup → ikuti wizard
+11
+Test end-to-end
+Input satu transaksi via bot → buka dashboard → verify data muncul
+8.2 vercel.json
+{
+"version": 2,
+"builds": [
+{ "src": "api/**/*.py", "use": "@vercel/python",
+"config": { "runtime": "python3.12" } },
+{ "src": "package.json", "use": "@vercel/static-build",
+"config": { "distDir": "dist" } }
+],
+"routes": [
+{ "src": "/api/(.*)", "dest": "/api/$1" },
+{ "src": "/(.*)", "dest": "/index.html" }
+]
+}
+8.3 requirements.txt
+python-telegram-bot==21.6
+supabase==2.9.0
+python-dotenv==1.0.1
+httpx==0.27.2
+8.4 .env.example
+TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_SERVICE_KEY=your_service_role_key
+AUTH_SECRET=64_char_random_hex_string_for_hmac
+OWNER_TELEGRAM_ID=your_telegram_user_id
+8.5 shared/db.py — Supabase Connection
+from supabase import create_client
+import os
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+# PENTING: Pakai port 6543 (PgBouncer), BUKAN port 5432 (direct)
+# Sudah di-handle otomatis oleh supabase-py v2 via SUPABASE_URL
+# Tambah ?pgbouncer=true ke DB connection string di Supabase dashboard
+def get_client():
+return create_client(SUPABASE_URL, SUPABASE_KEY)
+APPENDIX — CHART OF ACCOUNTS (74 Akun)
+🟢 = Aktif personal sekarang | 🔵 = DORMANT (template bisnis) | ✓ Header = tidak bisa diposting
+KODE
+AKUN (L2)
+SUB AKUN (L3)
+NB
+TYPE
+HEADER
+KETERANGAN
+1000
+ASET
+—
+D
+aset
+✓
+Header kelas
+1100
+Kas & Setara Kas
+—
+D
+aset
+✓
+Header kelompok
+1110
+Kas & Setara Kas
+Kas Tunai
+D
+aset
+🟢 Uang tunai di tangan
+1120
+Kas & Setara Kas
+Bank BNI (Kas Besar)
+D
+aset
+🟢 Rekening utama, income masuk sini
+1130
+Kas & Setara Kas
+SeaBank (Kas Kecil Imprest)
+D
+aset
+🟢 Target Rp 500.000, pengeluaran harian
+1140
+Kas & Setara Kas
+Bank Tabungan [TBD]
+D
+aset
+🟢 Ganti nama saat bank dipilih
+1150
+Kas & Setara Kas
+Kas Kecil Usaha
+D
+aset
+🔵 DORMANT
+1200
+Investasi JK Pendek
+—
+D
+aset
+✓
+Header
+1210
+Investasi JK Pendek
+Deposito
+D
+aset
+🟢
+1220
+Investasi JK Pendek
+Reksa Dana Pasar Uang
+D
+aset
+🟢
+1230
+Investasi JK Pendek
+Reksa Dana Campuran/Saham
+D
+aset
+🟢
+1240
+Investasi JK Pendek
+Saham
+D
+aset
+🟢
+1250
+Investasi JK Pendek
+SBN / Obligasi Negara
+D
+aset
+🟢
+1300
+Piutang
+—
+D
+aset
+✓
+Header
+1310
+Piutang
+Piutang Personal
+D
+aset
+🟢
+1320
+Piutang
+Piutang Usaha
+D
+aset
+🔵 DORMANT
+1330
+Piutang
+Uang Muka Pembelian
+D
+aset
+🔵 DORMANT
+1390
+Piutang
+Cadangan Kerugian Piutang
+K
+aset
+🔵 DORMANT — contra asset
+1400
+Persediaan
+—
+D
+aset
+✓
+Header
+1410
+Persediaan
+Persediaan Barang Dagang
+D
+aset
+🔵 DORMANT
+1420
+Persediaan
+Bahan Baku & Penolong
+D
+aset
+🔵 DORMANT
+1500
+Biaya Dibayar Dimuka
+—
+D
+aset
+✓
+Header
+1510
+Biaya Dibayar Dimuka
+Sewa Dibayar Dimuka
+D
+aset
+🟢
+1520
+Biaya Dibayar Dimuka
+Asuransi Dibayar Dimuka
+D
+aset
+🔵 DORMANT
+1590
+Biaya Dibayar Dimuka
+Lainnya Dibayar Dimuka
+D
+aset
+🔵 DORMANT
+1700
+Investasi JK Panjang
+—
+D
+aset
+✓
+Header
+1710
+Investasi JK Panjang
+Saham Jangka Panjang
+D
+aset
+🟢
+1720
+Investasi JK Panjang
+Emas / Logam Mulia
+D
+aset
+🟢
+1730
+Investasi JK Panjang
+Reksa Dana Jangka Panjang
+D
+aset
+🟢
+1800
+Aset Tetap
+—
+D
+aset
+✓
+Header
+1810
+Aset Tetap
+Kendaraan (Motor/Mobil)
+D
+aset
+🟢
+1820
+Aset Tetap
+Peralatan Elektronik (Laptop, HP)
+D
+aset
+🟢
+1830
+Aset Tetap
+Perabotan & Perlengkapan
+D
+aset
+🟢
+1840
+Aset Tetap
+Mesin & Peralatan Usaha
+D
+aset
+🔵 DORMANT
+1850
+Aset Tetap
+Bangunan
+D
+aset
+🔵 DORMANT
+1900
+Akumulasi Penyusutan
+—
+K
+aset
+✓
+Header — contra asset
+1910
+Akumulasi Penyusutan
+Akum. Peny. Kendaraan
+K
+aset
+🔵 Saldo=0 personal
+1920
+Akumulasi Penyusutan
+Akum. Peny. Peralatan Elektronik
+K
+aset
+🔵 Saldo=0 personal
+1930
+Akumulasi Penyusutan
+Akum. Peny. Perabotan
+K
+aset
+🔵 Saldo=0 personal
+2000
+LIABILITAS
+—
+K
+liabilitas
+✓
+Header kelas
+2100
+Utang Jangka Pendek
+—
+K
+liabilitas
+✓
+Header
+2110
+Utang JK Pendek
+Utang Usaha
+K
+liabilitas
+🔵 DORMANT
+2120
+Utang JK Pendek
+Kartu Kredit
+K
+liabilitas
+🔵 Saldo=0, template
+2130
+Utang JK Pendek
+SpayLater / Paylater
+K
+liabilitas
+🟢 Saldo=0 saat ini
+2140
+Utang JK Pendek
+Utang Personal / Informal
+K
+liabilitas
+🟢
+2200
+Biaya Masih Harus Dibayar
+—
+K
+liabilitas
+✓
+Header
+2210
+Biaya Akrual
+Utang Gaji
+K
+liabilitas
+🔵 DORMANT
+2220
+Biaya Akrual
+Utang PPN
+K
+liabilitas
+🔵 DORMANT
+2400
+Utang JK Panjang
+—
+K
+liabilitas
+✓
+Header
+2410
+Utang JK Panjang
+KTA / Pinjaman Bank
+K
+liabilitas
+🔵 DORMANT
+2420
+Utang JK Panjang
+Kredit Kendaraan
+K
+liabilitas
+🔵 DORMANT
+2430
+Utang JK Panjang
+KPR
+K
+liabilitas
+🔵 DORMANT
+3000
+EKUITAS
+—
+K
+ekuitas
+✓
+Header kelas
+3100
+Modal
+—
+K
+ekuitas
+✓
+Header
+3110
+Modal
+Saldo Awal / Modal Awal
+K
+ekuitas
+🟢 Set oleh /setup wizard
+3200
+Laba Ditahan
+—
+K
+ekuitas
+✓
+Header
+3210
+Laba Ditahan
+Laba Ditahan Tahun Lalu
+K
+ekuitas
+🟢 Diisi closing tahunan
+3220
+Laba Ditahan
+Laba/Rugi Tahun Berjalan
+K
+ekuitas
+🟢 Calculated dari L/R
+3300
+Prive / Distribusi
+—
+D
+ekuitas
+✓
+Header — debit normal
+3310
+Prive
+Prive (Pengambilan Pribadi)
+D
+ekuitas
+🟢 Tarik uang untuk non-bisnis
+4000
+PENDAPATAN
+—
+K
+pendapatan
+✓
+Header kelas
+4100
+Pendapatan Operasional
+—
+K
+pendapatan
+✓
+Header
+4110
+Pendapatan Operasional
+Honor / Upah Proyek
+K
+pendapatan
+🟢
+4120
+Pendapatan Operasional
+Gaji Tetap
+K
+pendapatan
+🟢
+4300
+Pendapatan Lain-lain
+—
+K
+pendapatan
+✓
+Header
+4310
+Pendapatan Lain-lain
+Bunga Tabungan / Deposito
+K
+pendapatan
+🟢
+4320
+Pendapatan Lain-lain
+Dividen Diterima
+K
+pendapatan
+🟢
+4330
+Pendapatan Lain-lain
+Keuntungan Penjualan Aset
+K
+pendapatan
+🟢
+4390
+Pendapatan Lain-lain
+Pendapatan Lain-lain
+K
+pendapatan
+🟢
+5000
+BEBAN PERSONAL
+—
+D
+beban
+✓
+Header kelas
+5100
+Beban Konsumsi
+—
+D
+beban
+✓
+Header
+5110
+Beban Konsumsi
+Makan Harian
+D
+beban
+🟢
+5120
+Beban Konsumsi
+Kopi & Minuman
+D
+beban
+🟢
+5130
+Beban Konsumsi
+Jajan / Snack
+D
+beban
+🟢
+5200
+Beban Transportasi
+—
+D
+beban
+✓
+Header
+5210
+Beban Transportasi
+BBM / Bensin
+D
+beban
+🟢
+5220
+Beban Transportasi
+Ojek Online
+D
+beban
+🟢
+5230
+Beban Transportasi
+Angkutan Umum
+D
+beban
+🟢
+5240
+Beban Transportasi
+Parkir & Tol
+D
+beban
+🟢
+5250
+Beban Transportasi
+Servis & Perawatan Kendaraan
+D
+beban
+🟢
+5300
+Beban Komunikasi
+—
+D
+beban
+✓
+Header
+5310
+Beban Komunikasi
+Pulsa & Data Internet HP
+D
+beban
+🟢
+5320
+Beban Komunikasi
+Internet Rumah / WiFi
+D
+beban
+🟢
+5400
+Beban Kesehatan
+—
+D
+beban
+✓
+Header
+5410
+Beban Kesehatan
+Obat-obatan
+D
+beban
+🟢
+5420
+Beban Kesehatan
+Dokter / Klinik / RS
+D
+beban
+🟢
+5430
+Beban Kesehatan
+Vitamin & Suplemen
+D
+beban
+🟢
+5500
+Beban Pengembangan Diri
+—
+D
+beban
+✓
+Header
+5510
+Beban Pengembangan Diri
+Buku & Referensi
+D
+beban
+🟢
+5520
+Beban Pengembangan Diri
+Kursus / Pelatihan
+D
+beban
+🟢
+5530
+Beban Pengembangan Diri
+Langganan Digital (Claude, dll)
+D
+beban
+🟢
+5540
+Beban Pengembangan Diri
+Alat Kerja & Perlengkapan
+D
+beban
+🟢
+5600
+Beban Tempat Tinggal
+—
+D
+beban
+✓
+Header
+5610
+Beban Tempat Tinggal
+Kos / Kontrakan
+D
+beban
+🟢
+5620
+Beban Tempat Tinggal
+Listrik
+D
+beban
+🟢
+5630
+Beban Tempat Tinggal
+Air
+D
+beban
+🟢
+5640
+Beban Tempat Tinggal
+Kebutuhan Rumah Tangga
+D
+beban
+🟢
+5700
+Beban Sosial & Keluarga
+—
+D
+beban
+✓
+Header
+5710
+Beban Sosial & Keluarga
+Kiriman ke Keluarga (Ortu/Adik)
+D
+beban
+🟢 BUKAN internal transfer!
+5720
+Beban Sosial & Keluarga
+Zakat / Sedekah / Infaq
+D
+beban
+🟢
+5730
+Beban Sosial & Keluarga
+Hadiah & Kado
+D
+beban
+🟢
+5740
+Beban Sosial & Keluarga
+Acara Sosial (Kondangan, dll)
+D
+beban
+🟢
+5800
+Beban Finansial
+—
+D
+beban
+✓
+Header
+5810
+Beban Finansial
+Bunga Pinjaman / Cicilan
+D
+beban
+🟢
+5820
+Beban Finansial
+Biaya Admin & Transfer Bank
+D
+beban
+🟢 Termasuk fee BI-Fast
+5830
+Beban Finansial
+Bunga Paylater / SpayLater
+D
+beban
+🟢
+5900
+Beban Lain-lain Personal
+—
+D
+beban
+✓
+Header
+5910
+Beban Lain-lain Personal
+Pakaian & Penampilan
+D
+beban
+🟢
+5920
+Beban Lain-lain Personal
+Rekreasi & Hiburan
+D
+beban
+🟢
+5930
+Beban Lain-lain Personal
+Olahraga (Sepeda, Badminton)
+D
+beban
+🟢
+5990
+Beban Lain-lain Personal
+Beban Tidak Terduga
+D
+beban
+🟢
+6000
+BEBAN USAHA (DORMANT)
+—
+D
+beban
+✓
+Header — aktif saat mulai bisnis
+6100
+HPP
+—
+D
+beban
+✓
+Header
+6110
+HPP
+HPP Barang Dagang
+D
+beban
+🔵 DORMANT
+6200
+Beban Gaji & SDM
+—
+D
+beban
+✓
+Header
+6210
+Beban Gaji & SDM
+Gaji Karyawan
+D
+beban
+🔵 DORMANT
+6220
+Beban Gaji & SDM
+Tunjangan + BPJS
+D
+beban
+🔵 DORMANT
+6300
+Beban Pemasaran
+—
+D
+beban
+✓
+Header
+6310
+Beban Pemasaran
+Iklan & Promosi
+D
+beban
+🔵 DORMANT
+6400
+Beban Operasional Usaha
+—
+D
+beban
+✓
+Header
+6410
+Beban Operasional Usaha
+Sewa Tempat Usaha
+D
+beban
+🔵 DORMANT
+6420
+Beban Operasional Usaha
+Listrik & Internet (Usaha)
+D
+beban
+🔵 DORMANT
+6500
+Beban Penyusutan
+—
+D
+beban
+✓
+Header
+6510
+Beban Penyusutan
+Penyusutan Kendaraan
+D
+beban
+🔵 Aktif saat bisnis
+6520
+Beban Penyusutan
+Penyusutan Peralatan
+D
+beban
+🔵 Aktif saat bisnis
+6700
+Beban Lain-lain Usaha
+—
+D
+beban
+✓
+Header
+6710
+Beban Lain-lain Usaha
+Kerugian Penjualan Aset
+D
+beban
+🔵 DORMANT
+9999
+Lain-lain
+Beban Tidak Terkategorikan
+D
+beban
+🟢 CATCH-ALL — semua yang tidak masuk kategori
+📊 Total: 74 akun (73 normal + 1 catch-all 9999)
+🟢 Aktif personal sekarang: ~45 akun
+🔵 DORMANT template bisnis: ~28 akun
+Semua akun is_active=true di DB — DORMANT hanya berarti is_active=false di bot_categories mapping.
+Bisa diaktifkan kapan saja via dashboard tanpa schema change.

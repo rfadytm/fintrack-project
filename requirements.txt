@@ -1,4 +1,4 @@
 # B7: tanpa python-telegram-bot (~250MB risk). Bot pakai raw httpx → function kecil & cold start cepat.
-supabase==2.9.0
+supabase==2.31.0   # >=2.16 wajib: dukungan API key format baru (sb_secret_/sb_publishable_)
 python-dotenv==1.0.1
 httpx==0.27.2

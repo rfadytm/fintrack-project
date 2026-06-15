@@ -11,7 +11,7 @@
 ## 2. Supabase
 1. app.supabase.com → **New Project** (free, no CC).
 2. SQL Editor → jalankan `db/01_schema.sql` … `db/07_functions.sql` **berurutan**.
-   (atau lokal: isi `SUPABASE_DB_URL`, lalu `python scripts/setup_db.py`)
+   (atau lokal tanpa psql: isi `SUPABASE_DB_URL`, `pip install psycopg2-binary python-dotenv`, lalu `python scripts/migrate.py`)
 3. Settings → API: salin **Project URL** + **service_role key**.
 4. Settings → Database → Connection string (Transaction/PgBouncer, **port 6543**) untuk `SUPABASE_DB_URL` (tambahkan `?pgbouncer=true`).
 

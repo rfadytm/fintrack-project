@@ -27,10 +27,12 @@ def main():
 
     base = sys.argv[1].rstrip("/")
     url = f"{base}/api/telegram/webhook"
-    r = httpx.post(
-        f"{API}/setWebhook",
-        json={"url": url, "allowed_updates": ["message", "callback_query"]},
-    )
+    payload = {"url": url, "allowed_updates": ["message", "callback_query"]}
+    secret = os.environ.get("WEBHOOK_SECRET")
+    if secret:
+        payload["secret_token"] = secret
+        print("(pakai secret_token dari WEBHOOK_SECRET)")
+    r = httpx.post(f"{API}/setWebhook", json=payload)
     print("setWebhook:", r.json())
     print("info:", httpx.get(f"{API}/getWebhookInfo").json())
 

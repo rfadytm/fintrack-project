@@ -625,6 +625,12 @@ def handle_command(chat_id, user_id, text):
 # ============================================================
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        # Verifikasi secret token Telegram (anti webhook spoofing).
+        # Graceful: kalau WEBHOOK_SECRET belum di-set, lewati cek (aman saat rollout).
+        secret = os.environ.get("WEBHOOK_SECRET")
+        if secret and self.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+            return send_json(self, 200, {"ok": True})
+
         update = read_json(self)
 
         # Whitelist

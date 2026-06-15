@@ -1,4 +1,6 @@
 """GET /api/reports/income-statement?year=&month= — Laba Rugi per bulan."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
 from shared.db import get_client

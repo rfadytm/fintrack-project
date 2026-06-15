@@ -5,6 +5,8 @@ Whitelist OWNER_TELEGRAM_ID. Semua POST transaksi lewat RPC post_document (doubl
 """
 import os
 from datetime import datetime
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
 from shared import telegram as tg

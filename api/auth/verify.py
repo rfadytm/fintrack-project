@@ -1,5 +1,7 @@
 """POST /api/auth/verify — token magic-link -> session cookie 30 hari (Flow 7)."""
 from datetime import datetime, timezone
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
 from shared.auth import create_session, session_cookie_header, verify_token_signature

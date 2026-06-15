@@ -1,4 +1,6 @@
 """GET /api/auth/me — B5: cek session aktif untuk ProtectedRoute React."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
 from shared.http import current_session, send_json

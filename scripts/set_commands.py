@@ -15,6 +15,7 @@ COMMANDS = [
     ("start", "Mulai & menu utama"),
     ("menu", "Tampilkan menu utama"),
     ("saldo", "Saldo semua akun"),
+    ("nihil", "Catat: tidak ada transaksi hari ini"),
     ("hari", "Ringkasan hari ini"),
     ("bulan", "Ringkasan bulan (opsional YYYY-MM)"),
     ("recent", "Transaksi terakhir (opsional n)"),

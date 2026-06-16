@@ -4,7 +4,7 @@ Router: text commands + callback queries + state-machine text input.
 Whitelist OWNER_TELEGRAM_ID. Semua POST transaksi lewat RPC post_document (double-entry + period-lock guard).
 """
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
@@ -62,6 +62,7 @@ def main_menu():
         [tg.btn("💸 Pengeluaran", "menu:expense"), tg.btn("💰 Pemasukan", "menu:income")],
         [tg.btn("🔄 Transfer", "menu:transfer"), tg.btn("📊 Laporan", "menu:report")],
         [tg.btn("💳 Saldo", "act:saldo"), tg.btn("⚙️ Pengaturan", "menu:settings")],
+        [tg.btn("🟢 Tidak Ada Transaksi Hari Ini", "act:nihil")],
     ]
 
 
@@ -132,6 +133,32 @@ def cmd_saldo(chat_id):
         lines.append(f"• {r['account_name']}: {rupiah(r['balance'])}")
     lines.append(f"\n<b>Net Worth: {rupiah(net)}</b>")
     tg.send_message(chat_id, "\n".join(lines))
+
+
+def cmd_nihil(chat_id, user_id):
+    """Catat hari tanpa transaksi → tulis ke Supabase (aktivitas/ping) + jejak harian."""
+    today = today_wib()
+    db().table("daily_log").upsert(
+        {
+            "log_date": today.isoformat(),
+            "user_id": user_id,
+            "note": "Tidak ada transaksi",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).execute()
+    # bonus ping: baca net worth biar ada query juga
+    res = (
+        db().table("account_balances")
+        .select("balance, account_type")
+        .in_("account_type", ["aset", "liabilitas"])
+        .execute()
+    )
+    net = sum((r["balance"] if r["account_type"] == "aset" else -r["balance"]) for r in res.data)
+    tg.send_message(
+        chat_id,
+        f"🟢 Tercatat: <b>tidak ada transaksi</b> hari ini ({fmt_date(today)}).\n"
+        f"Saldo tetap — Net Worth: <b>{rupiah(net)}</b>",
+    )
 
 
 def cmd_bulan(chat_id, year, month):
@@ -413,6 +440,8 @@ def handle_callback(cb):
         return tg.edit_message(chat_id, mid, "❌ Dibatalkan.")
     if data == "act:saldo":
         return cmd_saldo(chat_id)
+    if data == "act:nihil":
+        return cmd_nihil(chat_id, user_id)
 
     if data == "menu:expense":
         return show_categories(chat_id, mid, "expense", "exp")
@@ -590,6 +619,8 @@ def handle_command(chat_id, user_id, text):
         return cmd_help(chat_id)
     if cmd == "/saldo":
         return cmd_saldo(chat_id)
+    if cmd == "/nihil":
+        return cmd_nihil(chat_id, user_id)
     if cmd == "/hari":
         t = today_wib()
         return cmd_bulan(chat_id, t.year, t.month)

@@ -18,6 +18,9 @@ function Layout() {
       <main className="content">
         <Outlet />
       </main>
+      <footer className="footer">
+        © {new Date().getFullYear()} FinTrack — dev Rafi
+      </footer>
     </AppProvider>
   );
 }

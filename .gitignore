@@ -25,3 +25,4 @@ Thumbs.db
 
 # Backups (di-commit ke repo backup terpisah, bukan di sini)
 backups/*.sql
+backups/*.json

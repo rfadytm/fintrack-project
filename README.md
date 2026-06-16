@@ -25,12 +25,22 @@ Frontend & backend **terpisah** (folder `src/` vs `api/`+`shared/`) tapi deploy 
 ## Quick Start
 
 1. `cp .env.example .env` lalu isi semua nilai.
-2. Buat project Supabase, jalankan `db/01..07` di SQL Editor (atau `python scripts/setup_db.py`).
+2. Buat project Supabase, jalankan `db/01..10` di SQL Editor (atau `python scripts/migrate.py`).
 3. `npm install` lalu `npm run dev` untuk frontend.
 4. Deploy ke Vercel, set env vars, lalu `python scripts/setup_webhook.py https://<app>.vercel.app`.
 5. Di Telegram: `/start` → `/setup` (saldo awal) → mulai input.
 
 Detail lengkap di **[DEPLOY.md](DEPLOY.md)**. Referensi command di **[CHEATSHEET.md](CHEATSHEET.md)**.
+
+## Fitur (pasca-v1)
+
+- **Bot**: `/nihil` (catat hari tanpa transaksi + ping Supabase), menu command ber-ikon emoji.
+- **Dashboard**: pemilih bulan (◀ ▶), grafik akumulasi pengeluaran harian, chart beban per kategori, logo + footer.
+- **Settings**: edit Default Akun (dropdown dari `bot_settings`), Logout.
+- **Export `.xlsx`**: Jurnal, Buku Besar, Laporan (Laba Rugi & Trial Balance).
+- **Buku Besar**: 7 dropdown akun per kelas (Aset…Lain-lain).
+- **Keamanan**: RLS semua tabel, webhook secret token (opsional), audit trail config tables + soft-delete alias.
+- **Otomasi**: GitHub Actions keepalive (3 hari) + backup harian (`pg_dump` via session pooler, PG17).
 
 ## Blindspot fixes yang sudah diterapkan
 

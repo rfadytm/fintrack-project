@@ -21,10 +21,14 @@ def main():
         print("SUPABASE_DB_URL belum di-set.")
         sys.exit(1)
 
+    # pg_dump butuh session pooler (5432), bukan transaction pooler (6543).
+    db_url = db_url.replace(":6543", ":5432")
+
     os.makedirs("backups", exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     out = sys.argv[1] if len(sys.argv) > 1 else f"backups/fintrack_{stamp}.sql"
 
+    # Catatan: pg_dump harus >= versi server (Supabase = PG17).
     res = subprocess.run(["pg_dump", db_url, "--no-owner", "--no-privileges", "-f", out])
     if res.returncode != 0:
         sys.exit(1)

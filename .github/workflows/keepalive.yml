@@ -23,15 +23,25 @@ jobs:
   backup:
     if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # izinkan commit backup tanpa ubah setting repo
     steps:
       - uses: actions/checkout@v4
-      - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Install PostgreSQL 17 client
+        # Supabase server = PG17; pg_dump harus >= versi server. Default runner = 16.
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
       - name: Dump database
         run: |
           mkdir -p backups
           STAMP=$(date -u +%Y-%m-%d)
-          pg_dump "${{ secrets.SUPABASE_DB_URL }}" --no-owner --no-privileges \
+          # pg_dump butuh session pooler (port 5432), bukan transaction pooler (6543).
+          DUMP_URL="${{ secrets.SUPABASE_DB_URL }}"
+          DUMP_URL="${DUMP_URL/:6543/:5432}"
+          /usr/lib/postgresql/17/bin/pg_dump "$DUMP_URL" --no-owner --no-privileges \
             -f "backups/fintrack_${STAMP}.sql"
       - name: Commit backup
         run: |

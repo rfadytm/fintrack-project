@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict MmSYT4AW5HfxGBV4hzMoGcHSIROYUJsf11DJxRDrOSebhnVxteV49UqcX6eodUc
+\restrict jBWfBxu64cUgdRZiIdIpHaHvpMOiXxPPiMgH4tBlUaHFmuyWGKf5zoN7QaUT04E
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.10 (Ubuntu 17.10-1.pgdg24.04+1)
@@ -752,6 +752,30 @@ BEGIN
         RETURN NEW;
     END IF;
     RETURN NULL;
+END;
+$$;
+
+
+--
+-- Name: fn_audit_config(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fn_audit_config() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    j_old JSONB := CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD) END;
+    j_new JSONB := CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW) END;
+    j     JSONB := COALESCE(j_new, j_old);
+    rid   TEXT  := '';
+    col   TEXT;
+BEGIN
+    FOREACH col IN ARRAY TG_ARGV LOOP
+        rid := rid || COALESCE(j->>col, '') || ':';
+    END LOOP;
+    INSERT INTO audit_log(table_name, record_id, action, old_data, new_data)
+    VALUES (TG_TABLE_NAME, rtrim(rid, ':'), TG_OP, j_old, j_new);
+    RETURN COALESCE(NEW, OLD);
 END;
 $$;
 
@@ -3389,7 +3413,7 @@ CREATE TABLE public.audit_log (
     old_data jsonb,
     new_data jsonb,
     changed_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT audit_log_action_check CHECK (((action)::text = ANY ((ARRAY['INSERT'::character varying, 'UPDATE'::character varying])::text[])))
+    CONSTRAINT audit_log_action_check CHECK (((action)::text = ANY ((ARRAY['INSERT'::character varying, 'UPDATE'::character varying, 'DELETE'::character varying])::text[])))
 );
 
 
@@ -3432,7 +3456,11 @@ CREATE TABLE public.auth_tokens (
 CREATE TABLE public.bot_aliases (
     alias character varying(50) NOT NULL,
     account_code character varying(10) NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    deactivated_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by bigint
 );
 
 
@@ -3502,6 +3530,19 @@ CREATE TABLE public.bot_state (
     user_id bigint NOT NULL,
     state character varying(50) DEFAULT 'IDLE'::character varying NOT NULL,
     state_data jsonb DEFAULT '{}'::jsonb NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: daily_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.daily_log (
+    log_date date NOT NULL,
+    user_id bigint,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -4089,9 +4130,6 @@ COPY public."Fintrack_project" (id, created_at) FROM stdin;
 --
 
 COPY public.audit_log (id, table_name, record_id, action, old_data, new_data, changed_at) FROM stdin;
-7	transactions	KK-2026-06-001	INSERT	\N	{"status": "POSTED", "doc_type": "KK", "created_at": "2026-06-15T18:02:09.748377+00:00", "doc_number": "KK-2026-06-001", "description": "Beli ayam geprek", "is_reversal": false, "period_year": 2026, "input_source": "telegram", "period_month": 6, "reversal_of_doc": null, "transaction_date": "2026-06-16"}	2026-06-15 18:02:09.748377+00
-8	journal_lines	5	INSERT	\N	{"id": 5, "doc_number": "KK-2026-06-001", "line_order": 1, "account_code": "5110", "debit_amount": 25000, "credit_amount": 0}	2026-06-15 18:02:09.748377+00
-9	journal_lines	6	INSERT	\N	{"id": 6, "doc_number": "KK-2026-06-001", "line_order": 2, "account_code": "1110", "debit_amount": 0, "credit_amount": 25000}	2026-06-15 18:02:09.748377+00
 \.
 
 
@@ -4101,6 +4139,9 @@ COPY public.audit_log (id, table_name, record_id, action, old_data, new_data, ch
 
 COPY public.auth_tokens (token, created_at, expires_at, used_at, is_used) FROM stdin;
 NzI0ODI3MzUxMzo4NjAyZTc2ZTkyMTk5OTc2OjE3ODE1NTAxNTk.-BFm-gmGr2MV4V4cNgsbEPrcFbIQ_FNemsIwP23TrTw	2026-06-15 18:02:39.962963+00	2026-06-15 19:02:39.413447+00	2026-06-15 18:02:49.054325+00	t
+NzI0ODI3MzUxMzo1MTg1NTBiOTI5ZDZmZDQ3OjE3ODE1NzkxNTA.Og2eopG_WNlKjJcf_rMaOWqpoEbJsjY78cLgxXyXnlY	2026-06-16 02:05:50.820831+00	2026-06-16 03:05:50.281013+00	2026-06-16 02:05:59.392772+00	t
+NzI0ODI3MzUxMzo4NTgxZTQ5YTZjZDNmMTJlOjE3ODE1ODIwNzQ.0y6AXINR7VXPknXwrg9VRbqZzUpaahv8CagRCUo9I3I	2026-06-16 02:54:34.701003+00	2026-06-16 03:54:34.170259+00	2026-06-16 02:54:39.665907+00	t
+NzI0ODI3MzUxMzpmOWQ0NjQxNThlNjhiZDNlOjE3ODE2MDAyNjU.8U2SY6VxC44OfujLovxdU9wU3wC3Wdw7vwAHwYLCeo8	2026-06-16 07:57:45.139526+00	2026-06-16 08:57:45.017713+00	2026-06-16 07:58:20.569904+00	t
 \.
 
 
@@ -4108,19 +4149,19 @@ NzI0ODI3MzUxMzo4NjAyZTc2ZTkyMTk5OTc2OjE3ODE1NTAxNTk.-BFm-gmGr2MV4V4cNgsbEPrcFbIQ
 -- Data for Name: bot_aliases; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-COPY public.bot_aliases (alias, account_code, created_at) FROM stdin;
-makan	5110	2026-06-15 17:20:44.361662+00
-kopi	5120	2026-06-15 17:20:44.361662+00
-jajan	5130	2026-06-15 17:20:44.361662+00
-bensin	5210	2026-06-15 17:20:44.361662+00
-ojek	5220	2026-06-15 17:20:44.361662+00
-pulsa	5310	2026-06-15 17:20:44.361662+00
-wifi	5320	2026-06-15 17:20:44.361662+00
-kos	5610	2026-06-15 17:20:44.361662+00
-listrik	5620	2026-06-15 17:20:44.361662+00
-claude	5530	2026-06-15 17:20:44.361662+00
-zakat	5720	2026-06-15 17:20:44.361662+00
-keluarga	5710	2026-06-15 17:20:44.361662+00
+COPY public.bot_aliases (alias, account_code, created_at, is_active, deactivated_at, updated_at, updated_by) FROM stdin;
+makan	5110	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+kopi	5120	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+jajan	5130	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+bensin	5210	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+ojek	5220	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+pulsa	5310	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+wifi	5320	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+kos	5610	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+listrik	5620	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+claude	5530	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+zakat	5720	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
+keluarga	5710	2026-06-15 17:20:44.361662+00	t	\N	2026-06-16 02:32:32.682765+00	\N
 \.
 
 
@@ -4198,17 +4239,17 @@ COPY public.bot_category_accounts (category_id, account_code, display_order) FRO
 --
 
 COPY public.bot_settings (key, value, notes) FROM stdin;
-default_expense_source	1130	Akun sumber default pengeluaran (SeaBank)
-default_income_dest	1120	Akun tujuan default pemasukan (BNI)
 kas_kecil_account	1130	Akun kas kecil imprest (SeaBank)
-kas_kecil_target	500000	Target balance kas kecil = Rp 500.000
-kas_kecil_source	1120	Sumber pengisian kas kecil (BNI)
-savings_account	1140	Akun tabungan TBD
 auth_token_expiry_mins	60	Expiry magic link dashboard (menit)
 session_days	30	Durasi session browser (hari)
 state_timeout_mins	30	Timeout bot conversation state (menit)
-bi_fast_fee	2500	Fee BI-Fast default = Rp 2.500
 owner_telegram_id		Telegram ID pemilik — diisi saat setup (atau pakai env OWNER_TELEGRAM_ID)
+default_expense_source	1130	Akun sumber default pengeluaran (SeaBank)
+default_income_dest	1120	Akun tujuan default pemasukan (BNI)
+kas_kecil_source	1120	Sumber pengisian kas kecil (BNI)
+savings_account	1140	Akun tabungan TBD
+kas_kecil_target	500000	Target balance kas kecil = Rp 500.000
+bi_fast_fee	2500	Fee BI-Fast default = Rp 2.500
 \.
 
 
@@ -4217,7 +4258,6 @@ owner_telegram_id		Telegram ID pemilik — diisi saat setup (atau pakai env OWNE
 --
 
 COPY public.bot_state (user_id, state, state_data, updated_at) FROM stdin;
-7248273513	IDLE	{}	2026-06-15 18:02:09.918364+00
 \.
 
 
@@ -4358,12 +4398,18 @@ COPY public.chart_of_accounts (code, parent_code, level, account_name, account_t
 
 
 --
+-- Data for Name: daily_log; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.daily_log (log_date, user_id, note, created_at, updated_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: journal_lines; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.journal_lines (id, doc_number, line_order, account_code, debit_amount, credit_amount) FROM stdin;
-5	KK-2026-06-001	1	5110	25000	0
-6	KK-2026-06-001	2	1110	0	25000
 \.
 
 
@@ -4435,7 +4481,6 @@ COPY public.periods (year, month, is_locked, locked_at) FROM stdin;
 --
 
 COPY public.sequences (doc_type, year, month, last_seq) FROM stdin;
-KK	2026	6	1
 \.
 
 
@@ -4444,7 +4489,6 @@ KK	2026	6	1
 --
 
 COPY public.transactions (doc_number, doc_type, transaction_date, period_year, period_month, description, status, is_reversal, reversal_of_doc, input_source, created_at) FROM stdin;
-KK-2026-06-001	KK	2026-06-16	2026	6	Beli ayam geprek	POSTED	f	\N	telegram	2026-06-15 18:02:09.748377+00
 \.
 
 
@@ -4708,7 +4752,7 @@ SELECT pg_catalog.setval('public."Fintrack_project_id_seq"', 1, false);
 -- Name: audit_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.audit_log_id_seq', 9, true);
+SELECT pg_catalog.setval('public.audit_log_id_seq', 1, false);
 
 
 --
@@ -4722,7 +4766,7 @@ SELECT pg_catalog.setval('public.bot_categories_id_seq', 14, true);
 -- Name: journal_lines_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.journal_lines_id_seq', 6, true);
+SELECT pg_catalog.setval('public.journal_lines_id_seq', 1, false);
 
 
 --
@@ -5066,6 +5110,14 @@ ALTER TABLE ONLY public.bot_state
 
 ALTER TABLE ONLY public.chart_of_accounts
     ADD CONSTRAINT chart_of_accounts_pkey PRIMARY KEY (code);
+
+
+--
+-- Name: daily_log daily_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.daily_log
+    ADD CONSTRAINT daily_log_pkey PRIMARY KEY (log_date);
 
 
 --
@@ -5759,6 +5811,20 @@ CREATE UNIQUE INDEX vector_indexes_name_bucket_id_idx ON storage.vector_indexes 
 
 
 --
+-- Name: bot_aliases trg_audit_bot_aliases; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_bot_aliases AFTER INSERT OR DELETE OR UPDATE ON public.bot_aliases FOR EACH ROW EXECUTE FUNCTION public.fn_audit_config('alias');
+
+
+--
+-- Name: bot_settings trg_audit_bot_settings; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_bot_settings AFTER INSERT OR DELETE OR UPDATE ON public.bot_settings FOR EACH ROW EXECUTE FUNCTION public.fn_audit_config('key');
+
+
+--
 -- Name: journal_lines trg_audit_journal_lines; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5770,6 +5836,13 @@ CREATE TRIGGER trg_audit_journal_lines AFTER INSERT OR UPDATE ON public.journal_
 --
 
 CREATE TRIGGER trg_audit_transactions AFTER INSERT OR UPDATE ON public.transactions FOR EACH ROW EXECUTE FUNCTION public.fn_audit();
+
+
+--
+-- Name: transfer_fee_rules trg_audit_transfer_fee_rules; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_audit_transfer_fee_rules AFTER INSERT OR DELETE OR UPDATE ON public.transfer_fee_rules FOR EACH ROW EXECUTE FUNCTION public.fn_audit_config('from_account', 'to_account');
 
 
 --
@@ -6252,6 +6325,12 @@ ALTER TABLE public.bot_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chart_of_accounts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: daily_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.daily_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: journal_lines; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6405,5 +6484,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict MmSYT4AW5HfxGBV4hzMoGcHSIROYUJsf11DJxRDrOSebhnVxteV49UqcX6eodUc
+\unrestrict jBWfBxu64cUgdRZiIdIpHaHvpMOiXxPPiMgH4tBlUaHFmuyWGKf5zoN7QaUT04E
 

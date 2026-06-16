@@ -2,7 +2,8 @@ export default function Login() {
   return (
     <div className="center login">
       <div className="card login-card">
-        <h1>💰 FinTrack</h1>
+        <img src="/logo.jpg" alt="FinTrack" className="login-logo" />
+        <h1>FinTrack</h1>
         <p>Login lewat Telegram untuk keamanan.</p>
         <ol>
           <li>Buka bot Telegram FinTrack kamu.</li>

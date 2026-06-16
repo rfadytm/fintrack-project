@@ -26,8 +26,8 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; color: #fff; text-decoration: none; cursor: pointer; white-space: nowrap; }
 .brand:hover { opacity: 0.85; }
-.brand-logo { height: 30px; width: 30px; border-radius: 50%; background: #fff; object-fit: cover; }
-.login-logo { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; margin: 0 auto 8px; display: block; }
+.brand-logo { height: 32px; width: 32px; object-fit: contain; }
+.login-logo { width: 96px; height: 96px; object-fit: contain; margin: 0 auto 8px; display: block; }
 .navlinks { display: flex; gap: 16px; flex-wrap: wrap; }
 .navlinks a { color: #cdd9ec; text-decoration: none; font-size: 14px; }
 .navlinks a.active, .navlinks a:hover { color: #fff; font-weight: 600; }

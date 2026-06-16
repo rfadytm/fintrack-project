@@ -13,7 +13,7 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <NavLink to="/dashboard" className="brand">
-        <img src="/logo.jpg" alt="FinTrack" className="brand-logo" />
+        <img src="/logo.png" alt="FinTrack" className="brand-logo" />
         <span>FinTrack</span>
       </NavLink>
       <div className="navlinks">

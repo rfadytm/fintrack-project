@@ -4,6 +4,7 @@ import { useReport } from "../hooks/useReports";
 import { api } from "../utils/api";
 import { formatRupiah } from "../utils/formatRupiah";
 import { namaBulan } from "../utils/dateHelpers";
+import { exportRows, stamp } from "../utils/exportXlsx";
 
 export default function Reports() {
   const { period, setPeriod } = useApp();
@@ -35,9 +36,23 @@ function IncomeStatement({ year, month }) {
   const { loading, data } = useReport(`is:${year}:${month}`, () => api.incomeStatement(year, month), [year, month]);
   if (loading) return <p className="muted">Memuat…</p>;
   const d = data || {};
+  const exportIS = () =>
+    exportRows(
+      `fintrack_labarugi_${year}-${String(month).padStart(2, "0")}.xlsx`,
+      "Laba Rugi",
+      [
+        ...(d.revenue || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Pendapatan", Jumlah: r.amount })),
+        ...(d.expense || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Beban", Jumlah: r.amount })),
+        { Kode: "", Akun: "NET LABA/RUGI", Tipe: "", Jumlah: d.net_income },
+      ]
+    );
+
   return (
     <div className="card">
-      <h3>Laba Rugi — {namaBulan(month)} {year}</h3>
+      <div className="card-head">
+        <h3>Laba Rugi — {namaBulan(month)} {year}</h3>
+        <button className="btn-export" onClick={exportIS}>⬇️ Export .xlsx</button>
+      </div>
       <Section title="Pendapatan" rows={d.revenue} total={d.total_revenue} />
       <Section title="Beban" rows={d.expense} total={d.total_expense} />
       <div className={`net ${d.net_income >= 0 ? "green" : "red"}`}>
@@ -76,9 +91,24 @@ function TrialBalance({ year, month }) {
   const { loading, data } = useReport(`tb:${year}:${month}`, () => api.trialBalance(year, month), [year, month]);
   if (loading) return <p className="muted">Memuat…</p>;
   const d = data || {};
+  const exportTB = () =>
+    exportRows(
+      `fintrack_trialbalance_${year}-${String(month).padStart(2, "0")}.xlsx`,
+      "Trial Balance",
+      (d.accounts || []).map((r) => ({
+        Kode: r.code,
+        Akun: r.account_name,
+        Debit: r.total_debit || 0,
+        Kredit: r.total_credit || 0,
+      }))
+    );
+
   return (
     <div className="card">
-      <h3>Trial Balance s.d. {namaBulan(month)} {year}</h3>
+      <div className="card-head">
+        <h3>Trial Balance s.d. {namaBulan(month)} {year}</h3>
+        <button className="btn-export" onClick={exportTB}>⬇️ Export .xlsx</button>
+      </div>
       <div className="table-wrap">
       <table className="table">
         <thead>

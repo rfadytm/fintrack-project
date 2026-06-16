@@ -89,6 +89,15 @@ body {
 .btn-danger { background: #fff; color: var(--red); border: 1px solid var(--red); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-danger:hover { background: var(--red); color: #fff; }
 .save-status { font-size: 13px; color: var(--green); }
+.btn-export { background: #fff; color: var(--blue); border: 1px solid var(--blue); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.btn-export:hover:not(:disabled) { background: var(--blue); color: #fff; }
+.btn-export:disabled { opacity: 0.5; cursor: default; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.card-head h3 { margin: 0; }
+.ledger-selectors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 12px 0; }
+@media (max-width: 900px) { .ledger-selectors { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .ledger-selectors { grid-template-columns: 1fr; } }
+.ledger-selectors .field { margin-bottom: 0; max-width: none; }
 code { background: #edf2f7; padding: 1px 5px; border-radius: 4px; }
 
 /* ===== Mobile ===== */

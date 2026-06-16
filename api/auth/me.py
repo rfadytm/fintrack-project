@@ -13,3 +13,8 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 200, {"logged_in": True, "user_id": sess["uid"]})
         else:
             send_json(self, 200, {"logged_in": False})
+
+    def do_POST(self):
+        # Logout: hapus cookie session.
+        expired = "session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0"
+        send_json(self, 200, {"logged_in": False}, extra_headers={"Set-Cookie": expired})

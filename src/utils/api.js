@@ -22,6 +22,12 @@ export const api = {
   me: () => request("/auth/me"),
   verify: (token) =>
     request("/auth/verify", { method: "POST", body: JSON.stringify({ token }) }),
+  logout: () => request("/auth/me", { method: "POST" }),
+
+  // Settings (bot_settings)
+  settings: () => request("/settings"),
+  updateSettings: (settings) =>
+    request("/settings", { method: "POST", body: JSON.stringify({ settings }) }),
 
   // Data
   accounts: (params = "") => request(`/accounts${params}`),

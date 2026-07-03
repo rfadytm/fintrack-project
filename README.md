@@ -17,7 +17,7 @@ Frontend & backend **terpisah** (folder `src/` vs `api/`+`shared/`) tapi deploy 
 |--------|-----|
 | `api/` | Vercel serverless Python (bot webhook, REST API, auth) |
 | `shared/` | Util Python dipakai semua `api/` (db, auth, doc_number, validator, period, telegram, state) |
-| `db/` | SQL migrations `01`→`07` (jalankan berurutan) |
+| `db/` | SQL migrations `01`→`11` (jalankan berurutan; `11` = tabel `receipts` OCR) |
 | `src/` | React + Vite (dashboard) |
 | `scripts/` | setup_webhook, setup_db, backup_db, ngrok |
 | `.github/workflows/` | keepalive (B8) + backup harian (B9) |
@@ -34,6 +34,8 @@ Detail lengkap di **[DEPLOY.md](DEPLOY.md)**. Referensi command di **[CHEATSHEET
 
 ## Fitur (pasca-v1)
 
+- **OCR struk/nota → transaksi (v2)**: kirim foto struk ke bot → OCR (OCR.space free tier) → parse (merchant/nominal/tanggal) → konfirmasi → posting `KK`. Confidence < 50% → minta input manual. Semua tetap di Vercel serverless (tanpa Railway/FastAPI), same-origin auth utuh. Detail: **[docs/API.md](docs/API.md)**.
+- **API layer integrasi (v2)**: `POST /api/transactions` (buat transaksi) & `POST /api/receipts/parse` (OCR), auth via cookie **atau** header `X-API-Key` — base untuk menyambung project lain.
 - **Bot**: `/nihil` (catat hari tanpa transaksi + ping Supabase), menu command ber-ikon emoji.
 - **Dashboard**: pemilih bulan (◀ ▶), grafik akumulasi pengeluaran harian, chart beban per kategori, logo + footer.
 - **Settings**: edit Default Akun (dropdown dari `bot_settings`), Logout.

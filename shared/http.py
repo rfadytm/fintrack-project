@@ -2,7 +2,7 @@
 import json
 from urllib.parse import parse_qs, urlparse
 
-from shared.auth import parse_cookie, verify_session
+from shared.auth import parse_cookie, verify_api_key, verify_session
 
 
 def send_json(handler, status: int, obj, extra_headers: dict | None = None):
@@ -49,6 +49,21 @@ def require_session(handler) -> dict | None:
         send_json(handler, 401, {"error": "unauthorized"})
         return None
     return sess
+
+
+def require_auth(handler) -> dict | None:
+    """Auth untuk endpoint yang boleh dipakai browser (cookie) ATAU project lain (X-API-Key).
+
+    Return identitas {"via": "session"|"api_key", ...} atau kirim 401 dan return None.
+    Dipakai endpoint integrasi (mis. POST /api/transactions, /api/receipts/parse).
+    """
+    sess = current_session(handler)
+    if sess:
+        return {"via": "session", **sess}
+    if verify_api_key(handler.headers.get("X-API-Key")):
+        return {"via": "api_key"}
+    send_json(handler, 401, {"error": "unauthorized"})
+    return None
 
 
 def paginate(query: dict, default_limit: int = 50, max_limit: int = 200):

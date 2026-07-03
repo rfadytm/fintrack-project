@@ -14,6 +14,17 @@ import time
 
 AUTH_SECRET = os.environ["AUTH_SECRET"].encode()
 
+# Machine-to-machine key untuk integrasi project lain (header X-API-Key).
+# Opsional: kalau kosong, auth via API key dinonaktifkan (hanya session cookie yang jalan).
+API_KEY = os.environ.get("FINTRACK_API_KEY", "")
+
+
+def verify_api_key(provided: str | None) -> bool:
+    """True kalau X-API-Key cocok. Selalu False bila key server belum di-set."""
+    if not API_KEY or not provided:
+        return False
+    return hmac.compare_digest(provided, API_KEY)
+
 
 def _b64e(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")

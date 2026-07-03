@@ -14,6 +14,7 @@ API = f"https://api.telegram.org/bot{TOKEN}"
 COMMANDS = [
     ("start", "🏠 Mulai & menu utama"),
     ("menu", "📲 Tampilkan menu utama"),
+    ("scan", "🧾 Input dari foto struk/nota (OCR)"),
     ("saldo", "💳 Saldo semua akun"),
     ("nihil", "🟢 Tidak ada transaksi hari ini"),
     ("hari", "📅 Ringkasan hari ini"),

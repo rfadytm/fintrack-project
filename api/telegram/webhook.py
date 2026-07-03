@@ -9,12 +9,14 @@ import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
+from shared import ocr
 from shared import telegram as tg
 from shared.auth import generate_token
 from shared.db import get_client
 from shared.doc_number import generate as gen_doc
 from shared.format import bulan_nama, fmt_date, rupiah, today_wib
 from shared.http import read_json, send_json
+from shared.receipt_parser import parse_receipt
 from shared.state import get_state, reset_state, set_state
 from shared.validator import AmountError, parse_amount
 
@@ -61,9 +63,22 @@ def main_menu():
     return [
         [tg.btn("💸 Pengeluaran", "menu:expense"), tg.btn("💰 Pemasukan", "menu:income")],
         [tg.btn("🔄 Transfer", "menu:transfer"), tg.btn("📊 Laporan", "menu:report")],
+        [tg.btn("🧾 Scan Struk/Nota", "act:scan")],
         [tg.btn("💳 Saldo", "act:saldo"), tg.btn("⚙️ Pengaturan", "menu:settings")],
         [tg.btn("🟢 Tidak Ada Transaksi Hari Ini", "act:nihil")],
     ]
+
+
+def cmd_scan(chat_id):
+    """Instruksi input foto struk (OCR). Foto apa pun yang dikirim ke bot langsung diproses."""
+    tg.send_message(
+        chat_id,
+        "🧾 <b>Scan Struk / Nota</b>\n\n"
+        "Kirim <b>foto struk</b> belanja atau <b>screenshot e-wallet</b> "
+        "(GoPay/OVO/DANA/BCA) ke chat ini.\n\n"
+        "Aku akan baca otomatis: merchant, nominal, tanggal → tinggal konfirmasi.\n"
+        "💡 Tips: foto rata, terang, dan seluruh struk terlihat agar hasil lebih akurat.",
+    )
 
 
 def post_journal(doc_type, tx_date, description, lines, source="telegram"):
@@ -86,6 +101,129 @@ def post_journal(doc_type, tx_date, description, lines, source="telegram"):
 
 
 # ============================================================
+# OCR struk/nota (v2) — foto → parse → konfirmasi → transaksi
+# ============================================================
+def receipt_expense_account(merchant):
+    """Map nama merchant → akun beban via bot_aliases (substring). Fallback ke default."""
+    default = setting("receipt_default_expense", "9999")
+    if not merchant:
+        return default
+    m = merchant.lower()
+    res = db().table("bot_aliases").select("alias, account_code").execute()
+    # Alias terpanjang menang → 'grabfood'(makan) atas 'grab'(transport), dst.
+    for row in sorted(res.data or [], key=lambda r: -len(r["alias"])):
+        if row["alias"] in m:
+            return row["account_code"]
+    return default
+
+
+def _pick_photo_file_id(sizes):
+    """Pilih PhotoSize terbesar yang masih di bawah limit OCR (pakai metadata file_size,
+    tanpa perlu download dulu). Fallback: ukuran terkecil."""
+    ok = [s for s in sizes if s.get("file_size", 0) <= ocr.MAX_BYTES]
+    chosen = ok[-1] if ok else sizes[0]
+    return chosen["file_id"]
+
+
+def handle_photo(chat_id, user_id, msg):
+    """Foto struk (compressed) → OCR."""
+    process_receipt_image(chat_id, user_id, _pick_photo_file_id(msg["photo"]), msg.get("caption"))
+
+
+def handle_document(chat_id, user_id, msg):
+    """Struk dikirim sebagai FILE ('Kirim sebagai file') — image/* atau PDF."""
+    doc = msg["document"]
+    mime = doc.get("mime_type") or ""
+    if not (mime.startswith("image/") or mime == "application/pdf"):
+        return tg.send_message(chat_id, "📎 File itu bukan gambar/PDF. Kirim foto struk (JPG/PNG) atau PDF, ya.")
+    process_receipt_image(chat_id, user_id, doc["file_id"], msg.get("caption"))
+
+
+def process_receipt_image(chat_id, user_id, file_id, caption=None):
+    """OCR → parse → simpan pending → tawarkan konfirmasi (confirmation loop)."""
+    tg.send_message(chat_id, "🧾 Memproses struk… (beberapa detik)")
+    try:
+        image = tg.download_file(file_id)
+        raw = ocr.extract_text(image)
+    except ocr.OCRError as e:
+        return tg.send_message(chat_id, f"⚠️ {e}\nKetik /menu untuk input manual.")
+    except Exception as e:
+        return tg.send_message(chat_id, f"⚠️ Gagal proses gambar: {e}\nKetik /menu untuk input manual.")
+
+    p = parse_receipt(raw)
+    note = (caption or "").strip() or None
+    rid = (
+        db().table("receipts").insert(
+            {
+                "telegram_file_id": file_id,
+                "telegram_chat_id": chat_id,
+                "raw_ocr_text": raw,
+                "parsed_merchant": p["merchant"],
+                "parsed_amount": p["amount"],
+                "parsed_date": p["date"],
+                "confidence_score": p["confidence"],
+                "parse_source": "receipt",
+                "note": note,
+                "status": "pending",
+            }
+        ).execute().data[0]["id"]
+    )
+
+    threshold = int(setting("receipt_min_confidence", "50"))
+    if not p["amount"] or p["confidence"] < threshold:
+        db().table("receipts").update({"status": "manual"}).eq("id", rid).execute()
+        return tg.send_message(
+            chat_id,
+            f"🤔 Struk kurang jelas (confidence {p['confidence']}%).\n"
+            "Coba foto lebih terang/rata, atau input manual: /menu",
+        )
+
+    acc = receipt_expense_account(p["merchant"])
+    text = (
+        f"🧾 <b>Struk terbaca</b> (confidence {p['confidence']}%)\n\n"
+        f"🏪 Merchant: <b>{p['merchant'] or '-'}</b>\n"
+        f"💵 Nominal: <b>{rupiah(p['amount'])}</b>\n"
+        f"📅 Tgl struk: {p['date'] or '-'}\n"
+        f"📂 Kategori: {acc_name(acc)} ({acc})\n"
+        + (f"📝 Catatan: {note}\n" if note else "")
+        + "\nSimpan sebagai pengeluaran?"
+    )
+    kb = [[tg.btn("✅ Simpan", f"rcp:save:{rid}"), tg.btn("✖️ Batal", f"rcp:cancel:{rid}")]]
+    tg.send_message(chat_id, text, keyboard=kb)
+
+
+def handle_receipt_action(chat_id, user_id, mid, action, rid):
+    res = db().table("receipts").select("*").eq("id", rid).execute()
+    if not res.data:
+        return tg.edit_message(chat_id, mid, "⚠️ Data struk tidak ditemukan.")
+    r = res.data[0]
+
+    if action == "cancel":
+        db().table("receipts").update({"status": "rejected"}).eq("id", rid).execute()
+        return tg.edit_message(chat_id, mid, "❌ Struk dibatalkan.")
+
+    if action == "save":
+        if r["status"] == "confirmed":
+            return tg.edit_message(chat_id, mid, "ℹ️ Struk ini sudah tercatat.")
+        if not r["parsed_amount"]:
+            return tg.edit_message(chat_id, mid, "⚠️ Nominal struk tidak terbaca. Input manual: /menu")
+        # Prefill account_code + amount + desc; sisakan 1 pertanyaan (sumber dana)
+        # → masuk ke alur expense yang sudah ada (exp_src → preview → exp_post).
+        set_state(
+            user_id,
+            "EXPENSE_SOURCE",
+            {
+                "account_code": receipt_expense_account(r["parsed_merchant"]),
+                "amount": r["parsed_amount"],
+                "desc": r.get("note") or r["parsed_merchant"],
+                "receipt_id": rid,
+            },
+        )
+        kb = tg.rows([tg.btn(a["account_name"], f"exp_src:{a['code']}") for a in cash_accounts()], 2)
+        return tg.edit_message(chat_id, mid, "🏦 Bayar dari akun mana?", keyboard=kb)
+
+
+# ============================================================
 # Text commands
 # ============================================================
 def cmd_start(chat_id, user_id):
@@ -104,6 +242,7 @@ def cmd_help(chat_id):
         chat_id,
         "<b>Perintah:</b>\n"
         "/menu — menu utama\n"
+        "/scan — cara input dari foto struk/nota\n"
         "/saldo — saldo semua akun\n"
         "/hari — ringkasan hari ini\n"
         "/bulan [YYYY-MM] — ringkasan bulan\n"
@@ -442,6 +581,13 @@ def handle_callback(cb):
         return cmd_saldo(chat_id)
     if data == "act:nihil":
         return cmd_nihil(chat_id, user_id)
+    if data == "act:scan":
+        return cmd_scan(chat_id)
+
+    # Receipt OCR actions (v2): rcp:save:<id> | rcp:cancel:<id>
+    if data.startswith("rcp:"):
+        _, action, rid = data.split(":")
+        return handle_receipt_action(chat_id, user_id, mid, action, int(rid))
 
     if data == "menu:expense":
         return show_categories(chat_id, mid, "expense", "exp")
@@ -477,6 +623,11 @@ def handle_callback(cb):
                     {"account_code": d["source"], "debit": 0, "credit": d["amount"]},
                 ],
             )
+            # Link struk (kalau expense ini berasal dari OCR) → status confirmed.
+            if d.get("receipt_id"):
+                db().table("receipts").update(
+                    {"status": "confirmed", "doc_number": doc}
+                ).eq("id", d["receipt_id"]).execute()
             reset_state(user_id)
             tg.send_message(chat_id, f"✅ Tercatat {doc}. Saldo {d['source']}: {rupiah(balance_of(d['source']))}")
         except Exception as e:
@@ -619,6 +770,8 @@ def handle_command(chat_id, user_id, text):
         return cmd_help(chat_id)
     if cmd == "/saldo":
         return cmd_saldo(chat_id)
+    if cmd == "/scan":
+        return cmd_scan(chat_id)
     if cmd == "/nihil":
         return cmd_nihil(chat_id, user_id)
     if cmd == "/hari":
@@ -674,6 +827,10 @@ class handler(BaseHTTPRequestHandler):
         try:
             if cb:
                 handle_callback(cb)
+            elif msg and "photo" in msg:
+                handle_photo(msg["chat"]["id"], from_id, msg)
+            elif msg and "document" in msg:
+                handle_document(msg["chat"]["id"], from_id, msg)
             elif msg and "text" in msg:
                 handle_text(msg["chat"]["id"], from_id, msg["text"])
         except Exception as e:

@@ -7,7 +7,9 @@ test("export button is disabled with no ledger lines and enabled once lines load
   await expect(page.getByRole("heading", { name: "Buku Besar" })).toBeVisible();
   await expect(page.getByRole("button", { name: "⬇️ Export .xlsx" })).toBeDisabled();
 
-  await page.route("**/api/reports/ledger**", async (route) => {
+  await page.route("**/api/reports**", async (route) => {
+    const report = new URL(route.request().url()).searchParams.get("report");
+    if (report !== "ledger") return route.continue();
     await route.fulfill({
       status: 200,
       contentType: "application/json",

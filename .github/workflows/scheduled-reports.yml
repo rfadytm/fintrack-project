@@ -1,10 +1,12 @@
 name: scheduled-reports
 
 # v3: laporan & otomasi terjadwal (daily summary, weekly breakdown+anomaly+goals,
-# monthly comparison, annual summary, housekeeping bot_state). Semua cron ini
-# curl endpoint api/cron/*.py yang baru, auth via X-Cron-Secret (bukan reuse
-# FINTRACK_API_KEY — lihat shared/auth.py). Pola if-per-schedule sama seperti
-# keepalive.yml supaya beberapa cron bisa berbagi 1 file workflow.
+# monthly comparison, annual summary, housekeeping bot_state). Semua job curl
+# SATU function api/cron/index.py (dibedakan via ?job=) — dikonsolidasi dari 5
+# file terpisah karena Vercel Hobby cap 12 Serverless Functions/deployment.
+# Auth via X-Cron-Secret (bukan reuse FINTRACK_API_KEY — lihat shared/auth.py).
+# Pola if-per-schedule sama seperti keepalive.yml supaya beberapa cron bisa
+# berbagi 1 file workflow.
 on:
   schedule:
     - cron: "0 2 * * *"      # harian, 02:00 UTC = 09:00 WIB
@@ -21,7 +23,7 @@ jobs:
     steps:
       - name: Trigger daily report + recurring + bill reminders
         run: |
-          curl -fsS "${{ secrets.APP_URL }}/api/cron/daily" \
+          curl -fsS "${{ secrets.APP_URL }}/api/cron?job=daily" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
 
   weekly:
@@ -30,7 +32,7 @@ jobs:
     steps:
       - name: Trigger weekly breakdown + anomaly + goal progress
         run: |
-          curl -fsS "${{ secrets.APP_URL }}/api/cron/weekly" \
+          curl -fsS "${{ secrets.APP_URL }}/api/cron?job=weekly" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
 
   monthly:
@@ -39,7 +41,7 @@ jobs:
     steps:
       - name: Trigger month-over-month comparison
         run: |
-          curl -fsS "${{ secrets.APP_URL }}/api/cron/monthly" \
+          curl -fsS "${{ secrets.APP_URL }}/api/cron?job=monthly" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
 
   annual:
@@ -48,7 +50,7 @@ jobs:
     steps:
       - name: Trigger annual summary
         run: |
-          curl -fsS "${{ secrets.APP_URL }}/api/cron/annual" \
+          curl -fsS "${{ secrets.APP_URL }}/api/cron?job=annual" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
 
   housekeeping:
@@ -57,5 +59,5 @@ jobs:
     steps:
       - name: Sweep stale bot_state (flow timeout notify)
         run: |
-          curl -fsS "${{ secrets.APP_URL }}/api/cron/housekeeping" \
+          curl -fsS "${{ secrets.APP_URL }}/api/cron?job=housekeeping" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

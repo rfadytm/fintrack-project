@@ -115,6 +115,10 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
+function queryOf(route: Route): URLSearchParams {
+  return new URL(route.request().url()).searchParams;
+}
+
 export async function mockAuthenticated(page: Page) {
   await page.route("**/api/auth/me", async (route) => {
     if (route.request().method() === "POST") return json(route, { ok: true });
@@ -124,39 +128,40 @@ export async function mockAuthenticated(page: Page) {
     if (route.request().method() === "POST") return json(route, { code: "5940" }, 201);
     await json(route, ACCOUNTS);
   });
-  await page.route("**/api/reports/balance**", (route) => json(route, BALANCE));
-  await page.route("**/api/reports/monthly**", (route) => json(route, MONTHLY));
-  await page.route("**/api/reports/income-statement**", (route) => json(route, INCOME_STATEMENT));
-  await page.route("**/api/reports/trial-balance**", (route) => json(route, TRIAL_BALANCE));
-  await page.route("**/api/reports/range**", (route) => json(route, RANGE_REPORT));
-  await page.route("**/api/reports/forecast**", (route) => json(route, FORECAST));
-  await page.route("**/api/reports/ledger**", (route) => json(route, { lines: [] }));
+  // /reports is ONE consolidated function (see api/reports/index.py) — dispatch by ?report=.
+  await page.route("**/api/reports**", async (route) => {
+    const report = queryOf(route).get("report");
+    const byReport: Record<string, unknown> = {
+      balance: BALANCE,
+      monthly: MONTHLY,
+      "income-statement": INCOME_STATEMENT,
+      "trial-balance": TRIAL_BALANCE,
+      range: RANGE_REPORT,
+      forecast: FORECAST,
+      ledger: { lines: [] },
+    };
+    await json(route, byReport[report ?? ""] ?? { error: `unmocked report: ${report}` });
+  });
   await page.route("**/api/transactions**", (route) => json(route, TRANSACTIONS));
   await page.route("**/api/settings", async (route) => {
     if (route.request().method() === "POST") return json(route, { ok: true });
     await json(route, SETTINGS);
   });
+  // /budgets is ONE consolidated function (see api/budgets/index.py) — dispatch by ?resource=.
   await page.route("**/api/budgets**", async (route) => {
     const method = route.request().method();
     if (method === "POST" || method === "DELETE") return json(route, { ok: true });
-    await json(route, BUDGETS);
+    const isGoal = queryOf(route).get("resource") === "goal";
+    await json(route, isGoal ? GOALS : BUDGETS);
   });
-  await page.route("**/api/goals**", async (route) => {
-    const method = route.request().method();
-    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
-    await json(route, GOALS);
-  });
+  // /recurring is ONE consolidated function (see api/recurring/index.py) — dispatch by ?resource=.
   await page.route("**/api/recurring**", async (route) => {
     const method = route.request().method();
     if (method === "POST" || method === "DELETE") return json(route, { ok: true });
-    await json(route, RECURRING);
+    const isBill = queryOf(route).get("resource") === "bill";
+    await json(route, isBill ? BILLS : RECURRING);
   });
-  await page.route("**/api/bills**", async (route) => {
-    const method = route.request().method();
-    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
-    await json(route, BILLS);
-  });
-  await page.route("**/api/tags/assign", (route) => json(route, { ok: true }));
+  // /tags is ONE consolidated function (see api/tags/index.py) — assign uses ?action=assign.
   await page.route("**/api/tags**", async (route) => {
     const method = route.request().method();
     if (method === "POST" || method === "DELETE") return json(route, { ok: true });

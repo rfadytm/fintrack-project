@@ -2499,14 +2499,30 @@ setiap posting sukses (pengeluaran/pemasukan/transfer) sekarang menampilkan tomb
 "lanjut transaksi" di bawah pesan sukses, jadi tidak perlu ketik /menu atau /start
 lagi untuk input berikutnya (lihat continue_keyboard()).
 
-API baru/diperluas: /api/budgets, /api/goals, /api/recurring, /api/bills, /api/tags
-(+/api/tags/assign), POST /api/accounts (kategori custom), /api/reports/range
-(rentang tanggal bebas), /api/reports/forecast, savings_rate di /api/reports/monthly,
+API baru/diperluas: /api/budgets (+?resource=goal), /api/recurring (+?resource=bill),
+/api/tags (+?action=assign), POST /api/accounts (kategori custom), /api/reports
+(satu function, dibedakan ?report=balance|monthly|ledger|trial-balance|
+income-statement|range|forecast), savings_rate di ?report=monthly,
 filter ?tag= di GET /api/transactions.
 
-Cron baru (api/cron/{daily,weekly,monthly,annual,housekeeping}.py, dipicu
-.github/workflows/scheduled-reports.yml) — auth pakai CRON_SECRET terpisah dari
-FINTRACK_API_KEY (beda tujuan, beda blast-radius kalau bocor):
+⚠️ BLINDSPOT KETEMU SAAT DEPLOY PERTAMA (sudah diperbaiki): batch v3 awalnya
+nambah 13 file .py baru di atas 12 file lama = 25 Serverless Functions total.
+Vercel Hobby plan cuma boleh maksimal 12 Serverless Functions per deployment —
+deployment pertama GAGAL (Vercel diam-diam fallback ke build lama, jadi semua
+endpoint baru 404 padahal kelihatannya "sudah di-push"). Fix: 7 file reports/*
+digabung jadi api/reports/index.py (dispatch via query param ?report=), begitu
+juga budgets+goals -> api/budgets/index.py (?resource=), recurring+bills ->
+api/recurring/index.py (?resource=), tags+assign -> api/tags/index.py
+(?action=assign), dan 5 file cron -> api/cron/index.py (?job=). Total balik ke
+persis 12 function. Pelajaran: di proyek ini, setiap tambah endpoint API baru
+HARUS dicek dulu total jumlah file .py di api/ (termasuk subfolder) tidak lewat
+12 — kalau mepet, gabung ke function yang sudah ada lewat query-param dispatch
+alih-alih bikin file baru.
+
+Cron (api/cron/index.py, satu function dibedakan ?job=daily|weekly|monthly|
+annual|housekeeping, dipicu .github/workflows/scheduled-reports.yml) — auth
+pakai CRON_SECRET terpisah dari FINTRACK_API_KEY (beda tujuan, beda
+blast-radius kalau bocor):
 - daily (09:00 WIB): ringkasan hari ini + auto-post recurring transactions jatuh
   tempo + reminder tagihan H-3
 - weekly (Minggu): breakdown kategori + sparkline + deteksi anomali (z-score,

@@ -78,22 +78,27 @@ export const api = {
     }),
 
   // Data
+  // NOTE: /reports/*, /budgets+/goals, /recurring+/bills, and /tags(+assign) are
+  // each consolidated into ONE Vercel serverless function apiece (dispatched via
+  // query params below) — Vercel Hobby caps a deployment at 12 Serverless
+  // Functions, and this project sits exactly at that limit. Don't split these
+  // back into per-resource files without removing something else first.
   accounts: (params = "") => request(`/accounts${params}`, AccountsResponseSchema),
   transactions: (qs = "") => request(`/transactions${qs}`, TransactionsResponseSchema),
-  balance: (params = "") => request(`/reports/balance${params}`, BalanceResponseSchema),
+  balance: (params = "") => request(`/reports?report=balance${params.replace("?", "&")}`, BalanceResponseSchema),
   monthly: (year: number, month: number) =>
-    request(`/reports/monthly?year=${year}&month=${month}`, MonthlyReportSchema),
+    request(`/reports?report=monthly&year=${year}&month=${month}`, MonthlyReportSchema),
   ledger: (account: string, year: number, month: number) =>
-    request(`/reports/ledger?account=${account}&year=${year}&month=${month}`, LedgerResponseSchema),
+    request(`/reports?report=ledger&account=${account}&year=${year}&month=${month}`, LedgerResponseSchema),
   trialBalance: (year: number, month: number) =>
-    request(`/reports/trial-balance?year=${year}&month=${month}`, TrialBalanceSchema),
+    request(`/reports?report=trial-balance&year=${year}&month=${month}`, TrialBalanceSchema),
   incomeStatement: (year: number, month: number) =>
-    request(`/reports/income-statement?year=${year}&month=${month}`, IncomeStatementSchema),
+    request(`/reports?report=income-statement&year=${year}&month=${month}`, IncomeStatementSchema),
   reportRange: (dateFrom: string, dateTo: string) =>
-    request(`/reports/range?date_from=${dateFrom}&date_to=${dateTo}`, RangeReportSchema),
-  forecast: (months = 6) => request(`/reports/forecast?months=${months}`, ForecastSchema),
+    request(`/reports?report=range&date_from=${dateFrom}&date_to=${dateTo}`, RangeReportSchema),
+  forecast: (months = 6) => request(`/reports?report=forecast&months=${months}`, ForecastSchema),
 
-  // v3: Budgets
+  // v3: Budgets (resource=budget, default)
   budgets: () => request("/budgets", BudgetsResponseSchema),
   saveBudget: (account_code: string, monthly_limit: number) =>
     request("/budgets", unknownSchema, {
@@ -105,13 +110,13 @@ export const api = {
       method: "DELETE",
     }),
 
-  // v3: Goals
-  goals: () => request("/goals", GoalsResponseSchema),
+  // v3: Goals (resource=goal, shares api/budgets/index.py)
+  goals: () => request("/budgets?resource=goal", GoalsResponseSchema),
   saveGoal: (goal: { id?: number; name: string; target_amount: number; account_code: string; target_date?: string }) =>
-    request("/goals", unknownSchema, { method: "POST", body: JSON.stringify(goal) }),
-  deleteGoal: (id: number) => request(`/goals?id=${id}`, unknownSchema, { method: "DELETE" }),
+    request("/budgets?resource=goal", unknownSchema, { method: "POST", body: JSON.stringify(goal) }),
+  deleteGoal: (id: number) => request(`/budgets?resource=goal&id=${id}`, unknownSchema, { method: "DELETE" }),
 
-  // v3: Recurring transactions
+  // v3: Recurring transactions (resource=recurring, default)
   recurring: () => request("/recurring", RecurringResponseSchema),
   saveRecurring: (row: {
     id?: number;
@@ -123,11 +128,11 @@ export const api = {
   }) => request("/recurring", unknownSchema, { method: "POST", body: JSON.stringify(row) }),
   deleteRecurring: (id: number) => request(`/recurring?id=${id}`, unknownSchema, { method: "DELETE" }),
 
-  // v3: Bills
-  bills: () => request("/bills", BillsResponseSchema),
+  // v3: Bills (resource=bill, shares api/recurring/index.py)
+  bills: () => request("/recurring?resource=bill", BillsResponseSchema),
   saveBill: (bill: { id?: number; name: string; amount: number; due_day?: number; due_date?: string }) =>
-    request("/bills", unknownSchema, { method: "POST", body: JSON.stringify(bill) }),
-  deleteBill: (id: number) => request(`/bills?id=${id}`, unknownSchema, { method: "DELETE" }),
+    request("/recurring?resource=bill", unknownSchema, { method: "POST", body: JSON.stringify(bill) }),
+  deleteBill: (id: number) => request(`/recurring?resource=bill&id=${id}`, unknownSchema, { method: "DELETE" }),
 
   // v3: Tags
   tags: () => request("/tags", TagsResponseSchema),
@@ -135,7 +140,7 @@ export const api = {
     request("/tags", unknownSchema, { method: "POST", body: JSON.stringify({ name, emoji }) }),
   deleteTag: (id: number) => request(`/tags?id=${id}`, unknownSchema, { method: "DELETE" }),
   assignTags: (doc_number: string, tag_ids: number[]) =>
-    request("/tags/assign", unknownSchema, {
+    request("/tags?action=assign", unknownSchema, {
       method: "POST",
       body: JSON.stringify({ doc_number, tag_ids }),
     }),

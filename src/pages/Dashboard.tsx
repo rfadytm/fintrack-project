@@ -6,6 +6,7 @@ import TransactionTable from "../components/TransactionTable";
 import { Card, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
+import { AnimatedNumber } from "../components/ui/animated-number";
 import { useApp } from "../context/AppContext";
 import { useReport } from "../hooks/useReports";
 import { useTransactions } from "../hooks/useTransactions";
@@ -73,12 +74,13 @@ export default function Dashboard() {
         variants={{ show: { transition: { staggerChildren: 0.08 } } }}
       >
         {[
-          { label: "Pemasukan", value: formatRupiah(m.income), color: "text-green" },
-          { label: "Pengeluaran", value: formatRupiah(m.expense), color: "text-red" },
-          { label: "Net", value: formatRupiah(m.net), color: "text-navy" },
+          { label: "Pemasukan", value: m.income ?? 0, format: formatRupiah, color: "text-green" },
+          { label: "Pengeluaran", value: m.expense ?? 0, format: formatRupiah, color: "text-red" },
+          { label: "Net", value: m.net ?? 0, format: formatRupiah, color: "text-navy" },
           {
             label: "Savings Rate",
-            value: m.savings_rate != null ? `${Math.round(m.savings_rate * 100)}%` : "-",
+            value: m.savings_rate != null ? m.savings_rate * 100 : null,
+            format: (v: number) => `${Math.round(v)}%`,
             color: "text-blue",
           },
         ].map((s) => (
@@ -88,7 +90,9 @@ export default function Dashboard() {
           >
             <Card>
               <div className="text-muted text-xs">{s.label}</div>
-              <div className={`text-xl font-bold mt-1 ${s.color}`}>{s.value}</div>
+              <div className={`text-xl font-bold mt-1 ${s.color}`}>
+                {s.value != null ? <AnimatedNumber value={s.value} format={s.format} /> : "-"}
+              </div>
             </Card>
           </motion.div>
         ))}
@@ -97,7 +101,10 @@ export default function Dashboard() {
       {m.opening_balance ? (
         <div className="text-sm text-blue bg-blue/10 rounded-lg px-3 py-2">
           💡 Bulan ini termasuk saldo awal (dari <code>/setup</code>):{" "}
-          <b>{formatRupiah(m.opening_balance)}</b> — dicatat sebagai modal awal, bukan pendapatan, supaya Laba Rugi
+          <b>
+            <AnimatedNumber value={m.opening_balance ?? 0} format={formatRupiah} />
+          </b>{" "}
+          — dicatat sebagai modal awal, bukan pendapatan, supaya Laba Rugi
           tetap mencerminkan hasil usaha yang sebenarnya (bukan uang sendiri yang dipindah masuk).
         </div>
       ) : null}
@@ -202,7 +209,9 @@ function TimelineSection({ year, month }: { year: number; month: number }) {
                 <span className="truncate">
                   {e.description} <span className="text-muted text-xs">({formatTanggal(e.date)})</span>
                 </span>
-                <span className="tabular-nums font-semibold text-red shrink-0">{formatRupiah(e.amount)}</span>
+                <span className="tabular-nums font-semibold text-red shrink-0">
+                  <AnimatedNumber value={e.amount} format={formatRupiah} />
+                </span>
               </li>
             ))}
           </ul>

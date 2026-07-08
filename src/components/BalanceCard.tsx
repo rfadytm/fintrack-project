@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { formatRupiah } from "../utils/formatRupiah";
 import { Card } from "./ui/card";
+import { AnimatedNumber } from "./ui/animated-number";
 
 interface BalanceCardProps {
   name: string;
@@ -18,7 +19,9 @@ export default function BalanceCard({ name, balance, type }: BalanceCardProps) {
     >
       <Card className={type === "liabilitas" ? "border-red/20" : undefined}>
         <div className="text-muted text-xs">{name}</div>
-        <div className="text-xl font-bold text-navy mt-1">{formatRupiah(balance)}</div>
+        <div className="text-xl font-bold text-navy mt-1">
+          <AnimatedNumber value={balance} format={formatRupiah} />
+        </div>
       </Card>
     </motion.div>
   );

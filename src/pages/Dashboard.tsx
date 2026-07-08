@@ -11,10 +11,15 @@ import { useReport } from "../hooks/useReports";
 import { useTransactions } from "../hooks/useTransactions";
 import { api } from "../utils/api";
 import { formatRupiah } from "../utils/formatRupiah";
-import { namaBulan } from "../utils/dateHelpers";
+import { namaBulan, formatTanggal } from "../utils/dateHelpers";
 import type { BalanceRow } from "../types/api";
 
 const CASH = ["1110", "1120", "1130", "1140"];
+// Blindspot fix: satu pembelian besar (mis. langganan tahunan) bikin garis
+// akumulasi harian melompat dan tetap tinggi sisa bulan, mendistorsi tren
+// pengeluaran harian yang sebenarnya. Item di atas ambang ini dipisah ke daftar
+// sendiri, bukan ikut diakumulasi ke grafik.
+const LARGE_EXPENSE_THRESHOLD = 300_000;
 
 export default function Dashboard() {
   const { period, setPeriod } = useApp();
@@ -89,6 +94,14 @@ export default function Dashboard() {
         ))}
       </motion.div>
 
+      {m.opening_balance ? (
+        <div className="text-sm text-blue bg-blue/10 rounded-lg px-3 py-2">
+          💡 Bulan ini termasuk saldo awal (dari <code>/setup</code>):{" "}
+          <b>{formatRupiah(m.opening_balance)}</b> — dicatat sebagai modal awal, bukan pendapatan, supaya Laba Rugi
+          tetap mencerminkan hasil usaha yang sebenarnya (bukan uang sendiri yang dipindah masuk).
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardTitle>Beban per Kategori</CardTitle>
@@ -118,8 +131,19 @@ function ExpenseChart({ year, month }: { year: number; month: number }) {
   return <CategoryChart data={is.data?.expense || []} />;
 }
 
+interface LargeExpense {
+  description: string;
+  date: string;
+  amount: number;
+}
+
+interface TimelineData {
+  series: { label: string; value: number }[];
+  largeExpenses: LargeExpense[];
+}
+
 function TimelineSection({ year, month }: { year: number; month: number }) {
-  const t = useReport(
+  const t = useReport<TimelineData>(
     `timeline:${year}:${month}`,
     async () => {
       const [tx, acc] = await Promise.all([
@@ -129,15 +153,24 @@ function TimelineSection({ year, month }: { year: number; month: number }) {
       const isExpense: Record<string, boolean> = {};
       (acc.accounts || []).forEach((a) => (isExpense[a.code] = a.account_type === "beban"));
       const byDay: Record<number, number> = {};
+      const largeExpenses: LargeExpense[] = [];
       (tx.transactions || [])
         .filter((x) => x.status === "POSTED")
         .forEach((x) => {
           const day = new Date(x.transaction_date).getDate();
-          let amt = 0;
           (x.journal_lines || []).forEach((l) => {
-            if (isExpense[l.account_code]) amt += l.debit_amount || 0;
+            if (!isExpense[l.account_code]) return;
+            const amt = l.debit_amount || 0;
+            if (amt > LARGE_EXPENSE_THRESHOLD) {
+              largeExpenses.push({
+                description: x.description || x.doc_number,
+                date: x.transaction_date,
+                amount: amt,
+              });
+            } else {
+              byDay[day] = (byDay[day] || 0) + amt;
+            }
           });
-          byDay[day] = (byDay[day] || 0) + amt;
         });
       const lastDay = new Date(year, month, 0).getDate();
       let cum = 0;
@@ -146,11 +179,35 @@ function TimelineSection({ year, month }: { year: number; month: number }) {
         cum += byDay[d] || 0;
         series.push({ label: String(d), value: cum });
       }
-      return series;
+      largeExpenses.sort((a, b) => a.date.localeCompare(b.date));
+      return { series, largeExpenses };
     },
     [year, month]
   );
   if (t.loading) return <Skeleton className="h-64" />;
   if (t.error) return <p className="text-red text-sm">{t.error}</p>;
-  return <TimelineChart data={t.data || []} />;
+  const { series, largeExpenses } = t.data || { series: [], largeExpenses: [] };
+  return (
+    <>
+      <TimelineChart data={series} />
+      {largeExpenses.length > 0 && (
+        <div className="mt-3">
+          <p className="text-muted text-xs mb-1.5">
+            Pembelian besar bulan ini (di atas {formatRupiah(LARGE_EXPENSE_THRESHOLD)}, dipisah dari tren harian
+            supaya tidak mendistorsi grafik):
+          </p>
+          <ul className="space-y-1 text-sm">
+            {largeExpenses.map((e, i) => (
+              <li key={i} className="flex items-center justify-between gap-2">
+                <span className="truncate">
+                  {e.description} <span className="text-muted text-xs">({formatTanggal(e.date)})</span>
+                </span>
+                <span className="tabular-nums font-semibold text-red shrink-0">{formatRupiah(e.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  );
 }

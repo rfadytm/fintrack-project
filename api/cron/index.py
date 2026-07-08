@@ -22,6 +22,7 @@ from shared.db import get_client
 from shared.forecast import is_anomaly, threshold_for
 from shared.format import bulan_nama, fmt_date, rupiah, today_wib
 from shared.http import get_query, require_cron, send_json
+from shared.reports import month_totals
 from shared.scheduling import advance_next_run, bill_due_this_cycle, days_until, period_str
 from shared.sparkline import render as sparkline
 
@@ -36,17 +37,6 @@ def _setting(db, key, default=None):
 def _shift_month(year, month, delta):
     idx = (year * 12 + (month - 1)) + delta
     return idx // 12, idx % 12 + 1
-
-
-def _month_totals(db, year, month):
-    res = db.table("monthly_summary").select("*").eq("period_year", year).eq("period_month", month).execute()
-    income = expense = 0
-    for r in res.data:
-        if r["account_type"] == "pendapatan":
-            income += r["total_credit"] - r["total_debit"]
-        elif r["account_type"] == "beban":
-            expense += r["total_debit"] - r["total_credit"]
-    return income, expense
 
 
 # ============================================================
@@ -124,11 +114,33 @@ def _send_bill_reminders(db, today):
         db.table("bills").update({"last_reminded_period": this_period}).eq("id", b["id"]).execute()
 
 
+def _check_end_of_month(db, today):
+    """Hari terakhir bulan ini? Tawarkan nabung sisa bulan (user request) —
+    tombolnya (eom_save:<amount> / eom_skip) di-handle di api/telegram/webhook.py,
+    reuse alur transfer-ke-tabungan yang sudah ada (fee_rule/build_transfer_lines)."""
+    tomorrow = today + timedelta(days=1)
+    if tomorrow.month == today.month or not OWNER_ID:
+        return  # bukan hari terakhir bulan ini
+    income, expense = month_totals(db, today.year, today.month)
+    net = income - expense
+    if net <= 0:
+        return
+    savings_code = _setting(db, "savings_account", "1140")
+    acc = db.table("chart_of_accounts").select("account_name").eq("code", savings_code).execute()
+    savings_name = acc.data[0]["account_name"] if acc.data else savings_code
+    tg.send_message(
+        OWNER_ID,
+        f"🌙 <b>Akhir bulan!</b>\n\nSisa bulan ini: <b>{rupiah(net)}</b>\nMau ditabung ke {savings_name} ({savings_code})?",
+        keyboard=[[tg.btn(f"✅ Tabung {rupiah(net)}", f"eom_save:{net}"), tg.btn("❌ Nanti saja", "eom_skip")]],
+    )
+
+
 def job_daily(db):
     today = today_wib()
     _send_daily_summary(db, today)
     _execute_recurring(db, today)
     _send_bill_reminders(db, today)
+    _check_end_of_month(db, today)
 
 
 # ============================================================
@@ -259,8 +271,8 @@ def job_monthly(db):
     today = today_wib()
     last_y, last_m = _shift_month(today.year, today.month, -1)
     prev_y, prev_m = _shift_month(today.year, today.month, -2)
-    last_income, last_expense = _month_totals(db, last_y, last_m)
-    prev_income, prev_expense = _month_totals(db, prev_y, prev_m)
+    last_income, last_expense = month_totals(db, last_y, last_m)
+    prev_income, prev_expense = month_totals(db, prev_y, prev_m)
     income_chg = _pct_change(last_income, prev_income)
     expense_chg = _pct_change(last_expense, prev_expense)
     if not OWNER_ID:

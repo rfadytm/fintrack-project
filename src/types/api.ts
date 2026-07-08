@@ -61,6 +61,10 @@ export const MonthlyReportSchema = z.object({
   income: z.number().nullable().optional(),
   expense: z.number().nullable().optional(),
   net: z.number().nullable().optional(),
+  // Saldo awal (/setup, doc OB) HANYA muncul kalau periode yang dilihat = bulan
+  // setup dilakukan. Sengaja dipisah dari `income` — modal awal (ekuitas) bukan
+  // pendapatan secara akuntansi, jadi tidak ikut Laba Rugi/savings_rate.
+  opening_balance: z.number().nullable().optional(),
   savings_rate: z.number().nullable().optional(),
 });
 export type MonthlyReport = z.infer<typeof MonthlyReportSchema>;

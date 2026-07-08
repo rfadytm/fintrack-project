@@ -18,6 +18,7 @@ from shared.format import bulan_nama, fmt_date, rupiah, today_wib
 from shared.fx import FxError, convert as fx_convert
 from shared.http import read_json, send_json
 from shared.receipt_parser import parse_receipt
+from shared.reports import month_totals
 from shared.retry import retry
 from shared.state import get_state, reset_state, set_state
 from shared.validator import AmountError, parse_amount
@@ -66,6 +67,9 @@ def main_menu():
         [tg.btn("💸 Pengeluaran", "menu:expense"), tg.btn("💰 Pemasukan", "menu:income")],
         [tg.btn("🔄 Transfer", "menu:transfer"), tg.btn("📊 Laporan", "menu:report")],
         [tg.btn("🧾 Scan Struk/Nota", "act:scan")],
+        # v3
+        [tg.btn("💰 Budget", "act:budgets"), tg.btn("🎯 Goals", "act:goals")],
+        [tg.btn("🔁 Berulang", "act:recurring"), tg.btn("🧾 Tagihan", "act:bills")],
         [tg.btn("💳 Saldo", "act:saldo"), tg.btn("⚙️ Pengaturan", "menu:settings")],
         [tg.btn("🟢 Tidak Ada Transaksi Hari Ini", "act:nihil")],
     ]
@@ -357,7 +361,8 @@ def cmd_help(chat_id):
         "/bill · /bills — tagihan\n"
         "/tag doc nama1,nama2 · /tags — tag transaksi\n"
         "/kategori add nama — kategori beban custom\n"
-        "/convert jumlah DARI KE — konversi mata uang",
+        "/convert jumlah DARI KE — konversi mata uang\n"
+        "/nabung — cek & tabung sisa bulan ini",
     )
 
 
@@ -718,6 +723,27 @@ def cmd_convert(chat_id, args):
 
 
 # ============================================================
+# v3: /nabung — trigger manual versi prompt akhir bulan (cron job=daily juga
+# ngirim ini otomatis di hari terakhir bulan, lihat api/cron/index.py
+# _check_end_of_month). User bisa cek & nabung kapan saja, tidak perlu nunggu.
+# ============================================================
+def cmd_nabung(chat_id):
+    today = today_wib()
+    income, expense = month_totals(db(), today.year, today.month)
+    net = income - expense
+    if net <= 0:
+        return tg.send_message(chat_id, f"Belum ada sisa bulan ini ({rupiah(net)}). Coba lagi nanti ya.")
+    savings_code = setting("savings_account", "1140")
+    kb = [[tg.btn(f"✅ Tabung {rupiah(net)}", f"eom_save:{net}"), tg.btn("❌ Nanti saja", "eom_skip")]]
+    tg.send_message(
+        chat_id,
+        f"💰 Sisa bulan ini (s.d. hari ini): <b>{rupiah(net)}</b>\n"
+        f"Mau ditabung ke {acc_name(savings_code)} ({savings_code})?",
+        keyboard=kb,
+    )
+
+
+# ============================================================
 # Setup wizard (B6: guard double-run)
 # ============================================================
 def cmd_setup(chat_id, user_id):
@@ -937,6 +963,16 @@ def handle_callback(cb):
         return cmd_scan(chat_id)
     if data == "act:menu":
         return tg.send_message(chat_id, "📲 Menu utama:", keyboard=main_menu())
+    # v3: tombol menu utama -> list read-only; nambah baru tetap via command
+    # (/budget, /goal, /recurring, /bill, /kategori) karena butuh wizard teks.
+    if data == "act:budgets":
+        return cmd_budgets_list(chat_id)
+    if data == "act:goals":
+        return cmd_goals_list(chat_id)
+    if data == "act:recurring":
+        return cmd_recurring_list(chat_id)
+    if data == "act:bills":
+        return cmd_bills_list(chat_id)
 
     # Receipt OCR actions (v2): rcp:save:<id> | rcp:cancel:<id>
     if data.startswith("rcp:"):
@@ -1048,6 +1084,23 @@ def handle_callback(cb):
         except Exception as e:
             tg.send_message(chat_id, f"⚠️ Gagal: {e}")
         return
+
+    # v3: Prompt akhir bulan (dikirim dari api/cron/index.py job=daily) — "nabung
+    # sisa bulan?". Reuse alur transfer ke tabungan yang sudah ada.
+    if data.startswith("eom_save:"):
+        try:
+            amount = int(data.split(":", 1)[1])
+        except ValueError:
+            return tg.edit_message(chat_id, mid, "⚠️ Nominal tidak valid.")
+        bni = "1120"
+        savings = setting("savings_account", "1140")
+        fee = fee_rule(bni, savings)
+        lines, _ = build_transfer_lines(bni, savings, amount, fee)
+        set_state(user_id, "TRANSFER_PREVIEW", {"lines": lines, "desc": "Nabung sisa bulan"})
+        tg.edit_message(chat_id, mid, "👍 Oke, konfirmasi transfernya:")
+        return transfer_preview(chat_id, user_id)
+    if data == "eom_skip":
+        return tg.edit_message(chat_id, mid, "👌 Oke, sisanya dibiarkan dulu. Bisa /goal atau kelola manual kapan saja.")
 
     # v3: Goal wizard — nama & target sudah di state_data, tinggal pilih akun acuan progress.
     if data.startswith("goal_acc:"):
@@ -1261,6 +1314,8 @@ def handle_command(chat_id, user_id, text):
         return cmd_kategori_add(chat_id, parts[1:])
     if cmd == "/convert":
         return cmd_convert(chat_id, parts[1:])
+    if cmd == "/nabung":
+        return cmd_nabung(chat_id)
 
     tg.send_message(chat_id, "Perintah tidak dikenal. /help")
 

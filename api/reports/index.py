@@ -23,6 +23,7 @@ from shared.db import get_client
 from shared.format import today_wib
 from shared.forecast import linear_forecast
 from shared.http import get_query, paginate, require_session, send_json
+from shared.reports import month_totals, month_totals_from_rows
 
 
 def _report_balance(db, q):
@@ -33,6 +34,29 @@ def _report_balance(db, q):
     return 200, {"balances": res.data}
 
 
+def _opening_balance(db, year, month):
+    """Total saldo awal (/setup, doc OB) yang JATUH DI PERIODE INI, kalau ada.
+    Modal awal (ekuitas 3110) BUKAN pendapatan secara akuntansi — ini dipisah
+    supaya tidak ikut ke `income`/Laba Rugi, tapi tetap bisa ditampilkan sebagai
+    catatan/pengecualian di dashboard (blindspot yang dilaporkan user: OB=0 di
+    Pemasukan bikin bingung, padahal itu memang benar secara double-entry)."""
+    ob = (
+        db.table("transactions")
+        .select("doc_number")
+        .eq("doc_type", "OB")
+        .eq("period_year", year)
+        .eq("period_month", month)
+        .eq("status", "POSTED")
+        .execute()
+    )
+    if not ob.data:
+        return None
+    doc_numbers = [r["doc_number"] for r in ob.data]
+    lines = db.table("journal_lines").select("debit_amount").in_("doc_number", doc_numbers).gt("debit_amount", 0).execute()
+    total = sum(l["debit_amount"] or 0 for l in lines.data)
+    return total or None
+
+
 def _report_monthly(db, q):
     if not q.get("year") or not q.get("month"):
         return 400, {"error": "year & month wajib"}
@@ -40,18 +64,14 @@ def _report_monthly(db, q):
     summary = (
         db.table("monthly_summary").select("*").eq("period_year", year).eq("period_month", month).execute()
     )
-    income = expense = 0
-    for r in summary.data:
-        if r["account_type"] == "pendapatan":
-            income += r["total_credit"] - r["total_debit"]
-        elif r["account_type"] == "beban":
-            expense += r["total_debit"] - r["total_credit"]
+    income, expense = month_totals_from_rows(summary.data)
     return 200, {
         "year": year,
         "month": month,
         "income": income,
         "expense": expense,
         "net": income - expense,
+        "opening_balance": _opening_balance(db, year, month),
         "savings_rate": round((income - expense) / income, 4) if income > 0 else None,
         "by_type": summary.data,
     }
@@ -62,6 +82,14 @@ def _report_ledger(db, q):
     if not account:
         return 400, {"error": "account wajib"}
     limit, offset = paginate(q, default_limit=100)
+
+    # Blindspot fix: running_balance selalu dihitung debit-credit, benar untuk
+    # akun normal debit (aset/beban) tapi TERBALIK untuk akun normal credit
+    # (liabilitas/ekuitas/pendapatan) — Buku Besar untuk akun-akun itu jadi
+    # salah tanda (mis. saldo utang kelihatan makin kecil padahal nambah).
+    acc = db.table("chart_of_accounts").select("normal_balance").eq("code", account).execute()
+    normal_balance = acc.data[0]["normal_balance"] if acc.data else "debit"
+
     query = (
         db.table("journal_lines")
         .select(
@@ -80,7 +108,8 @@ def _report_ledger(db, q):
     rows = sorted(res.data, key=lambda r: r["transactions"]["transaction_date"])
     running = 0
     for r in rows:
-        running += r["debit_amount"] - r["credit_amount"]
+        delta = r["debit_amount"] - r["credit_amount"]
+        running += delta if normal_balance == "debit" else -delta
         r["running_balance"] = running
     return 200, {"account": account, "lines": rows, "total": res.count}
 
@@ -182,17 +211,6 @@ def _shift_month(year, month, delta):
     return idx // 12, idx % 12 + 1
 
 
-def _month_totals(db, year, month):
-    res = db.table("monthly_summary").select("*").eq("period_year", year).eq("period_month", month).execute()
-    income = expense = 0
-    for r in res.data:
-        if r["account_type"] == "pendapatan":
-            income += r["total_credit"] - r["total_debit"]
-        elif r["account_type"] == "beban":
-            expense += r["total_debit"] - r["total_credit"]
-    return income, expense
-
-
 def _category_totals(db, year, month):
     res = (
         db.table("journal_lines")
@@ -227,7 +245,7 @@ def _report_forecast(db, q):
     expense_hist = [0] * months
     category_hist = {}
     for i, (y, m) in enumerate(periods):
-        income_hist[i], expense_hist[i] = _month_totals(db, y, m)
+        income_hist[i], expense_hist[i] = month_totals(db, y, m)
         for code, row in _category_totals(db, y, m).items():
             entry = category_hist.setdefault(code, {"account_name": row["account_name"], "values": [0] * months})
             entry["values"][i] = row["amount"]

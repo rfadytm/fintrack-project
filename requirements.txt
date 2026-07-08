@@ -2,3 +2,6 @@
 supabase==2.31.0   # >=2.16 wajib: dukungan API key format baru (sb_secret_/sb_publishable_)
 python-dotenv==1.0.1
 httpx==0.27.2
+
+# Catatan otomasi: TIDAK pakai n8n (butuh host terpisah, di luar free tier Vercel/Supabase).
+# Automasi terjadwal cukup GitHub Actions cron / Vercel Cron — lihat docs/CHANGELOG_v2.md §13.

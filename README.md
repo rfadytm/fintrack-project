@@ -42,7 +42,7 @@ Detail lengkap di **[DEPLOY.md](DEPLOY.md)**. Referensi command di **[CHEATSHEET
 - **Export `.xlsx`**: Jurnal, Buku Besar, Laporan (Laba Rugi & Trial Balance).
 - **Buku Besar**: 7 dropdown akun per kelas (Aset…Lain-lain).
 - **Keamanan**: RLS semua tabel, webhook secret token (opsional), audit trail config tables + soft-delete alias.
-- **Otomasi**: GitHub Actions keepalive (3 hari) + backup harian (`pg_dump` via session pooler, PG17).
+- **Otomasi**: GitHub Actions keepalive (3 hari) + backup harian (`pg_dump` via session pooler, PG17). Otomasi lanjutan (notifikasi terjadwal, dll.) sengaja **tanpa n8n** — tetap GitHub Actions cron / Vercel Cron agar 100% gratis & tidak butuh host baru. Alasan lengkap: [docs/CHANGELOG_v2.md §13](docs/CHANGELOG_v2.md#13-automasi-lanjutan-kenapa-bukan-n8n).
 
 ## Blindspot fixes yang sudah diterapkan
 

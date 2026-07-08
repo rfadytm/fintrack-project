@@ -8,6 +8,11 @@ node_modules/
 dist/
 .vite/
 
+# Testing
+playwright-report/
+test-results/
+coverage/
+
 # Python
 __pycache__/
 *.pyc

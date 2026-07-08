@@ -2544,10 +2544,20 @@ simulasi wizard bot lewat pemanggilan fungsi langsung karena tidak ada token bot
 Supabase asli di lingkungan dev), tambahan test Vitest (skema Zod, util CSV,
 komponen) dan Playwright e2e (4 halaman baru, API di-mock).
 
-Langkah manual yang masih perlu dilakukan user (tidak dijalankan otomatis):
-1. Jalankan db/12_budgets_goals.sql s.d. db/17_v3_preferences.sql di Supabase.
-2. Tambah secret CRON_SECRET (Vercel env + GitHub Actions secret) dan APP_URL
-   (GitHub Actions secret, URL produksi Vercel) supaya scheduled-reports.yml jalan.
-3. Redeploy Vercel, lalu jalankan workflow_dispatch manual sekali untuk memastikan
-   tiap cron job (daily/weekly/monthly/annual/housekeeping) hijau sebelum percaya
-   jadwal otomatisnya.
+Langkah manual yang perlu dilakukan user — SEMUA SUDAH DIKERJAKAN & TERVERIFIKASI
+LIVE (2026-07-09):
+1. ✅ db/12_budgets_goals.sql s.d. db/17_v3_preferences.sql sudah dijalankan di Supabase.
+2. ✅ Secret CRON_SECRET (Vercel env + GitHub Actions secret) dan APP_URL (GitHub
+   Actions secret, URL produksi Vercel) sudah ditambahkan.
+3. ✅ Redeploy Vercel sudah dilakukan — tapi deployment PERTAMA sempat GAGAL
+   (lihat blindspot 12-function di atas: 25 function > limit Hobby 12, Vercel
+   fallback diam-diam ke build lama, endpoint baru 404 walau push sukses).
+   Ketahuan dari build log Vercel yang eksplisit ("No more than 12 Serverless
+   Functions can be added to a Deployment on the Hobby plan"), langsung dikonsolidasi
+   ke 12 function pas, di-push ulang, deployment KEDUA Ready — dicek manual pakai
+   curl ke endpoint produksi (401 bukan 404 lagi = kode baru sudah live).
+   workflow_dispatch scheduled-reports.yml lalu dijalankan manual sekali, kelima
+   job (daily/weekly/monthly/annual/housekeeping) HIJAU — dikonfirmasi user
+   langsung dari GitHub Actions, termasuk notifikasi Telegram asli yang masuk.
+Tidak ada lagi langkah manual yang menggantung dari v3 — jadwal cron sekarang
+jalan otomatis sendiri sesuai on.schedule masing-masing.

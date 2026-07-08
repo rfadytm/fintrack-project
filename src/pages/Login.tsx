@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
 import { Card } from "../components/ui/card";
+import AppBackground from "../components/AppBackground";
 
 export default function Login() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-100">
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <AppBackground />
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}

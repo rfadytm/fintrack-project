@@ -14,6 +14,7 @@ import { Toaster } from "sonner";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import AppBackground from "./components/AppBackground";
 import { Skeleton } from "./components/ui/skeleton";
 import { AppProvider } from "./context/AppContext";
 import { queryClient, setUnauthorizedHandler } from "./lib/queryClient";
@@ -44,7 +45,8 @@ function Layout() {
   const location = useLocation();
   return (
     <AppProvider>
-      <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50">
+      <AppBackground />
+      <div className="min-h-screen flex flex-col">
         <Navbar />
         <main className="flex-1 w-full max-w-[1100px] mx-auto p-4 sm:p-6">
           <AnimatePresence mode="wait">
@@ -61,7 +63,7 @@ function Layout() {
             </motion.div>
           </AnimatePresence>
         </main>
-        <footer className="text-center py-4 text-xs text-muted border-t border-border bg-white/60">
+        <footer className="text-center py-4 text-xs text-muted border-t border-white/30 bg-white/30 backdrop-blur-md">
           © {new Date().getFullYear()} FinTrack — dev Rafi
         </footer>
       </div>

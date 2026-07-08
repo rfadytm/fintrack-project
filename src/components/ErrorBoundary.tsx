@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
+import AppBackground from "./AppBackground";
 
 interface Props {
   children: ReactNode;
@@ -26,7 +27,8 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50">
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <AppBackground />
           <Card className="max-w-md text-center">
             <CardContent className="flex flex-col items-center gap-3">
               <p className="text-2xl">⚠️</p>

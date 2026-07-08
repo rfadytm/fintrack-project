@@ -9,6 +9,13 @@ import {
   TrialBalanceSchema,
   AuthMeSchema,
   SettingsResponseSchema,
+  BudgetsResponseSchema,
+  GoalsResponseSchema,
+  RecurringResponseSchema,
+  BillsResponseSchema,
+  TagsResponseSchema,
+  RangeReportSchema,
+  ForecastSchema,
 } from "../types/api";
 
 // Base URL: kosong = same-origin (produksi Vercel). Dev pakai proxy Vite.
@@ -82,4 +89,61 @@ export const api = {
     request(`/reports/trial-balance?year=${year}&month=${month}`, TrialBalanceSchema),
   incomeStatement: (year: number, month: number) =>
     request(`/reports/income-statement?year=${year}&month=${month}`, IncomeStatementSchema),
+  reportRange: (dateFrom: string, dateTo: string) =>
+    request(`/reports/range?date_from=${dateFrom}&date_to=${dateTo}`, RangeReportSchema),
+  forecast: (months = 6) => request(`/reports/forecast?months=${months}`, ForecastSchema),
+
+  // v3: Budgets
+  budgets: () => request("/budgets", BudgetsResponseSchema),
+  saveBudget: (account_code: string, monthly_limit: number) =>
+    request("/budgets", unknownSchema, {
+      method: "POST",
+      body: JSON.stringify({ account_code, monthly_limit }),
+    }),
+  deleteBudget: (account_code: string) =>
+    request(`/budgets?account_code=${encodeURIComponent(account_code)}`, unknownSchema, {
+      method: "DELETE",
+    }),
+
+  // v3: Goals
+  goals: () => request("/goals", GoalsResponseSchema),
+  saveGoal: (goal: { id?: number; name: string; target_amount: number; account_code: string; target_date?: string }) =>
+    request("/goals", unknownSchema, { method: "POST", body: JSON.stringify(goal) }),
+  deleteGoal: (id: number) => request(`/goals?id=${id}`, unknownSchema, { method: "DELETE" }),
+
+  // v3: Recurring transactions
+  recurring: () => request("/recurring", RecurringResponseSchema),
+  saveRecurring: (row: {
+    id?: number;
+    doc_type: string;
+    description?: string;
+    lines: { account_code: string; debit?: number; credit?: number }[];
+    frequency: string;
+    next_run?: string;
+  }) => request("/recurring", unknownSchema, { method: "POST", body: JSON.stringify(row) }),
+  deleteRecurring: (id: number) => request(`/recurring?id=${id}`, unknownSchema, { method: "DELETE" }),
+
+  // v3: Bills
+  bills: () => request("/bills", BillsResponseSchema),
+  saveBill: (bill: { id?: number; name: string; amount: number; due_day?: number; due_date?: string }) =>
+    request("/bills", unknownSchema, { method: "POST", body: JSON.stringify(bill) }),
+  deleteBill: (id: number) => request(`/bills?id=${id}`, unknownSchema, { method: "DELETE" }),
+
+  // v3: Tags
+  tags: () => request("/tags", TagsResponseSchema),
+  createTag: (name: string, emoji?: string) =>
+    request("/tags", unknownSchema, { method: "POST", body: JSON.stringify({ name, emoji }) }),
+  deleteTag: (id: number) => request(`/tags?id=${id}`, unknownSchema, { method: "DELETE" }),
+  assignTags: (doc_number: string, tag_ids: number[]) =>
+    request("/tags/assign", unknownSchema, {
+      method: "POST",
+      body: JSON.stringify({ doc_number, tag_ids }),
+    }),
+
+  // v3: custom expense category
+  createCategory: (account_name: string) =>
+    request("/accounts", unknownSchema, {
+      method: "POST",
+      body: JSON.stringify({ account_name, account_type: "beban" }),
+    }),
 };

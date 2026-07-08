@@ -10,6 +10,7 @@ import { Label } from "../components/ui/label";
 import { Select } from "../components/ui/select";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -110,6 +111,67 @@ export default function Settings() {
     navigate("/login", { replace: true });
   };
 
+  // v3: preferences (currency/timezone/report toggles/alert sensitivity/rate limit) —
+  // separate small form since these aren't covered by SettingsFormSchema's strict
+  // validation (they're free-form/optional, unlike the required account selects above).
+  const [prefs, setPrefs] = useState<Record<string, string>>({
+    currency_preference: "IDR",
+    timezone: "Asia/Jakarta",
+    daily_report_enabled: "true",
+    weekly_report_enabled: "true",
+    alert_sensitivity: "normal",
+    rate_limit_per_minute: "20",
+    budget_alert_throttle_mins: "120",
+  });
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    setPrefs((prev) => {
+      const next = { ...prev };
+      settingsQuery.data.settings.forEach((r) => {
+        if (r.key in next) next[r.key] = String(r.value ?? "");
+      });
+      return next;
+    });
+  }, [settingsQuery.data]);
+
+  const savePrefs = async () => {
+    setSavingPrefs(true);
+    try {
+      await api.updateSettings(prefs);
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      toast.success("Preferensi tersimpan.");
+    } catch (e) {
+      toast.error("Gagal menyimpan: " + (e as Error).message);
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
+  // v3: tags management
+  const tagsQuery = useQuery({ queryKey: ["tags"], queryFn: api.tags });
+  const [newTag, setNewTag] = useState("");
+  const addTag = async () => {
+    const name = newTag.trim();
+    if (!name) return;
+    try {
+      await api.createTag(name);
+      await queryClient.invalidateQueries({ queryKey: ["tags"] });
+      setNewTag("");
+    } catch (e) {
+      toast.error("Gagal menambah tag: " + (e as Error).message);
+    }
+  };
+  const removeTag = async (id: number) => {
+    try {
+      await api.deleteTag(id);
+      await queryClient.invalidateQueries({ queryKey: ["tags"] });
+    } catch (e) {
+      toast.error("Gagal menghapus tag: " + (e as Error).message);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-navy text-xl font-bold m-0">Pengaturan</h2>
@@ -156,6 +218,99 @@ export default function Settings() {
             </Button>
             {status && <span className="text-green text-sm">{status}</span>}
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Preferensi</CardTitle>
+        <p className="text-muted text-sm mt-1">Mata uang, timezone, laporan terjadwal, dan sensitivitas alert.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 max-w-lg">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-currency">Mata uang</Label>
+            <Input
+              id="pref-currency"
+              value={prefs.currency_preference}
+              onChange={(e) => setPrefs((p) => ({ ...p, currency_preference: e.target.value.toUpperCase() }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-tz">Timezone</Label>
+            <Input
+              id="pref-tz"
+              value={prefs.timezone}
+              onChange={(e) => setPrefs((p) => ({ ...p, timezone: e.target.value }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-daily">Laporan harian</Label>
+            <Select
+              id="pref-daily"
+              value={prefs.daily_report_enabled}
+              onChange={(e) => setPrefs((p) => ({ ...p, daily_report_enabled: e.target.value }))}
+            >
+              <option value="true">Aktif</option>
+              <option value="false">Nonaktif</option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-weekly">Laporan mingguan</Label>
+            <Select
+              id="pref-weekly"
+              value={prefs.weekly_report_enabled}
+              onChange={(e) => setPrefs((p) => ({ ...p, weekly_report_enabled: e.target.value }))}
+            >
+              <option value="true">Aktif</option>
+              <option value="false">Nonaktif</option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-sensitivity">Sensitivitas deteksi anomali</Label>
+            <Select
+              id="pref-sensitivity"
+              value={prefs.alert_sensitivity}
+              onChange={(e) => setPrefs((p) => ({ ...p, alert_sensitivity: e.target.value }))}
+            >
+              <option value="strict">Ketat</option>
+              <option value="normal">Normal</option>
+              <option value="relaxed">Longgar</option>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="pref-ratelimit">Rate limit (pesan/menit)</Label>
+            <Input
+              id="pref-ratelimit"
+              type="number"
+              value={prefs.rate_limit_per_minute}
+              onChange={(e) => setPrefs((p) => ({ ...p, rate_limit_per_minute: e.target.value }))}
+            />
+          </div>
+        </div>
+        <Button className="mt-3" onClick={savePrefs} disabled={savingPrefs}>
+          {savingPrefs ? "Menyimpan…" : "Simpan Preferensi"}
+        </Button>
+      </Card>
+
+      <Card>
+        <CardTitle>Tags</CardTitle>
+        <p className="text-muted text-sm mt-1">Kelola tag untuk memberi label transaksi (mis. "kerja", "pajak").</p>
+        <div className="flex gap-2 mt-3 max-w-md">
+          <Input
+            placeholder="Nama tag baru"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTag()}
+          />
+          <Button onClick={addTag} disabled={!newTag.trim()}>
+            Tambah
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {(tagsQuery.data?.tags || []).map((t) => (
+            <Badge key={t.id} variant="neutral" className="cursor-pointer" onClick={() => removeTag(t.id)}>
+              {t.emoji || ""} {t.name} ✕
+            </Badge>
+          ))}
+          {!tagsQuery.data?.tags.length && <span className="text-muted text-sm">Belum ada tag.</span>}
         </div>
       </Card>
 

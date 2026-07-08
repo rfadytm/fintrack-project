@@ -1,0 +1,61 @@
+name: scheduled-reports
+
+# v3: laporan & otomasi terjadwal (daily summary, weekly breakdown+anomaly+goals,
+# monthly comparison, annual summary, housekeeping bot_state). Semua cron ini
+# curl endpoint api/cron/*.py yang baru, auth via X-Cron-Secret (bukan reuse
+# FINTRACK_API_KEY — lihat shared/auth.py). Pola if-per-schedule sama seperti
+# keepalive.yml supaya beberapa cron bisa berbagi 1 file workflow.
+on:
+  schedule:
+    - cron: "0 2 * * *"      # harian, 02:00 UTC = 09:00 WIB
+    - cron: "0 2 * * 0"      # mingguan, Minggu 02:00 UTC
+    - cron: "0 3 1 * *"      # bulanan, tanggal 1, 03:00 UTC
+    - cron: "0 4 1 1 *"      # tahunan, 1 Januari, 04:00 UTC
+    - cron: "*/30 * * * *"   # housekeeping, tiap 30 menit
+  workflow_dispatch:
+
+jobs:
+  daily:
+    if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily report + recurring + bill reminders
+        run: |
+          curl -fsS "${{ secrets.APP_URL }}/api/cron/daily" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+  weekly:
+    if: github.event.schedule == '0 2 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly breakdown + anomaly + goal progress
+        run: |
+          curl -fsS "${{ secrets.APP_URL }}/api/cron/weekly" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+  monthly:
+    if: github.event.schedule == '0 3 1 * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger month-over-month comparison
+        run: |
+          curl -fsS "${{ secrets.APP_URL }}/api/cron/monthly" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+  annual:
+    if: github.event.schedule == '0 4 1 1 *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger annual summary
+        run: |
+          curl -fsS "${{ secrets.APP_URL }}/api/cron/annual" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+  housekeeping:
+    if: github.event.schedule == '*/30 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sweep stale bot_state (flow timeout notify)
+        run: |
+          curl -fsS "${{ secrets.APP_URL }}/api/cron/housekeeping" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

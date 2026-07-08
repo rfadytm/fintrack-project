@@ -61,6 +61,21 @@ class handler(BaseHTTPRequestHandler):
         limit, offset = paginate(q)
         db = get_client()
 
+        doc_numbers_for_tag = None
+        if q.get("tag"):
+            tag_row = db.table("tags").select("id").eq("name", q["tag"]).execute()
+            if not tag_row.data:
+                return send_json(self, 200, {"transactions": [], "total": 0, "limit": limit, "offset": offset})
+            tagged = (
+                db.table("transaction_tags")
+                .select("doc_number")
+                .eq("tag_id", tag_row.data[0]["id"])
+                .execute()
+            )
+            doc_numbers_for_tag = [r["doc_number"] for r in tagged.data]
+            if not doc_numbers_for_tag:
+                return send_json(self, 200, {"transactions": [], "total": 0, "limit": limit, "offset": offset})
+
         query = db.table("transactions").select(
             "*, journal_lines(line_order, account_code, debit_amount, credit_amount)",
             count="exact",
@@ -73,6 +88,8 @@ class handler(BaseHTTPRequestHandler):
             query = query.eq("period_year", int(q["year"]))
         if q.get("month"):
             query = query.eq("period_month", int(q["month"]))
+        if doc_numbers_for_tag is not None:
+            query = query.in_("doc_number", doc_numbers_for_tag)
 
         res = (
             query.order("created_at", desc=True)

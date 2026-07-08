@@ -42,6 +42,7 @@ class handler(BaseHTTPRequestHandler):
                 "income": income,
                 "expense": expense,
                 "net": income - expense,
+                "savings_rate": round((income - expense) / income, 4) if income > 0 else None,
                 "by_type": summary.data,
             },
         )

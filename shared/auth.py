@@ -18,12 +18,24 @@ AUTH_SECRET = os.environ["AUTH_SECRET"].encode()
 # Opsional: kalau kosong, auth via API key dinonaktifkan (hanya session cookie yang jalan).
 API_KEY = os.environ.get("FINTRACK_API_KEY", "")
 
+# Secret terpisah khusus buat endpoint cron (api/cron/*.py), dipanggil GitHub Actions.
+# Sengaja BUKAN reuse FINTRACK_API_KEY: kalau API_KEY itu bocor (dipakai integrasi luar),
+# blast radius-nya tidak otomatis mencakup endpoint cron internal juga.
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
+
 
 def verify_api_key(provided: str | None) -> bool:
     """True kalau X-API-Key cocok. Selalu False bila key server belum di-set."""
     if not API_KEY or not provided:
         return False
     return hmac.compare_digest(provided, API_KEY)
+
+
+def verify_cron_secret(provided: str | None) -> bool:
+    """True kalau X-Cron-Secret cocok. Selalu False bila CRON_SECRET belum di-set."""
+    if not CRON_SECRET or not provided:
+        return False
+    return hmac.compare_digest(provided, CRON_SECRET)
 
 
 def _b64e(raw: bytes) -> str:

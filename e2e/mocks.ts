@@ -67,6 +67,50 @@ const SETTINGS = {
   ],
 };
 
+const BUDGETS = {
+  budgets: [{ account_code: "5130", account_name: "Beban Makan", monthly_limit: 1_000_000, spent: 300_000, last_alert_at: null }],
+};
+const GOALS = {
+  goals: [{ id: 1, name: "Laptop baru", target_amount: 10_000_000, account_code: "1130", target_date: null, is_active: true, current_amount: 2_000_000 }],
+};
+const RECURRING = {
+  recurring: [
+    {
+      id: 1,
+      doc_type: "KK",
+      description: "Langganan Netflix",
+      lines: [
+        { account_code: "5130", debit: 54000, credit: 0 },
+        { account_code: "1130", debit: 0, credit: 54000 },
+      ],
+      frequency: "monthly",
+      next_run: "2026-08-01",
+      is_active: true,
+    },
+  ],
+};
+const BILLS = {
+  bills: [{ id: 1, name: "Listrik PLN", amount: 250000, due_day: 20, due_date: null, is_recurring: true, is_active: true, last_reminded_period: null }],
+};
+const TAGS = { tags: [{ id: 1, name: "kerja", emoji: "💼" }] };
+const RANGE_REPORT = {
+  date_from: "2026-07-01",
+  date_to: "2026-07-08",
+  revenue: [],
+  expense: [{ code: "5130", account_name: "Beban Makan", amount: 30000 }],
+  total_revenue: 0,
+  total_expense: 30000,
+  net_income: -30000,
+};
+const FORECAST = {
+  months: 6,
+  income_history: [4000000, 4200000, 4100000, 4300000, 4500000, 5000000],
+  expense_history: [3000000, 3100000, 2900000, 3200000, 3100000, 3200000],
+  income_forecast: 5100000,
+  expense_forecast: 3250000,
+  top_categories: [{ code: "5130", account_name: "Beban Makan", history: [300000, 310000, 290000, 320000, 310000, 300000], forecast: 305000 }],
+};
+
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -76,16 +120,47 @@ export async function mockAuthenticated(page: Page) {
     if (route.request().method() === "POST") return json(route, { ok: true });
     await json(route, { logged_in: true });
   });
-  await page.route("**/api/accounts**", (route) => json(route, ACCOUNTS));
+  await page.route("**/api/accounts**", async (route) => {
+    if (route.request().method() === "POST") return json(route, { code: "5940" }, 201);
+    await json(route, ACCOUNTS);
+  });
   await page.route("**/api/reports/balance**", (route) => json(route, BALANCE));
   await page.route("**/api/reports/monthly**", (route) => json(route, MONTHLY));
   await page.route("**/api/reports/income-statement**", (route) => json(route, INCOME_STATEMENT));
   await page.route("**/api/reports/trial-balance**", (route) => json(route, TRIAL_BALANCE));
+  await page.route("**/api/reports/range**", (route) => json(route, RANGE_REPORT));
+  await page.route("**/api/reports/forecast**", (route) => json(route, FORECAST));
   await page.route("**/api/reports/ledger**", (route) => json(route, { lines: [] }));
   await page.route("**/api/transactions**", (route) => json(route, TRANSACTIONS));
   await page.route("**/api/settings", async (route) => {
     if (route.request().method() === "POST") return json(route, { ok: true });
     await json(route, SETTINGS);
+  });
+  await page.route("**/api/budgets**", async (route) => {
+    const method = route.request().method();
+    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
+    await json(route, BUDGETS);
+  });
+  await page.route("**/api/goals**", async (route) => {
+    const method = route.request().method();
+    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
+    await json(route, GOALS);
+  });
+  await page.route("**/api/recurring**", async (route) => {
+    const method = route.request().method();
+    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
+    await json(route, RECURRING);
+  });
+  await page.route("**/api/bills**", async (route) => {
+    const method = route.request().method();
+    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
+    await json(route, BILLS);
+  });
+  await page.route("**/api/tags/assign", (route) => json(route, { ok: true }));
+  await page.route("**/api/tags**", async (route) => {
+    const method = route.request().method();
+    if (method === "POST" || method === "DELETE") return json(route, { ok: true });
+    await json(route, TAGS);
   });
 }
 

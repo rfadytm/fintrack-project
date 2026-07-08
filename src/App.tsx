@@ -29,6 +29,10 @@ const Ledger = lazy(() => import("./pages/Ledger"));
 const Reports = lazy(() => import("./pages/Reports"));
 const COA = lazy(() => import("./pages/COA"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Budgets = lazy(() => import("./pages/Budgets"));
+const Goals = lazy(() => import("./pages/Goals"));
+const Recurring = lazy(() => import("./pages/Recurring"));
+const Bills = lazy(() => import("./pages/Bills"));
 
 // Wires an expired/invalid session (any query throwing UnauthorizedError) to a
 // redirect — see the blindspot note in lib/queryClient.ts.
@@ -88,6 +92,10 @@ export default function App() {
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/coa" element={<COA />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/budgets" element={<Budgets />} />
+                <Route path="/goals" element={<Goals />} />
+                <Route path="/recurring" element={<Recurring />} />
+                <Route path="/bills" element={<Bills />} />
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
               </Route>
             </Route>

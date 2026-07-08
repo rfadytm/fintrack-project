@@ -18,14 +18,14 @@ test("blocks save and shows an inline error when a required select is cleared", 
   });
 
   await page.getByLabel("Sumber default pengeluaran").selectOption("");
-  await page.getByRole("button", { name: "Simpan" }).click();
+  await page.getByRole("button", { name: "Simpan", exact: true }).click();
 
   await expect(page.getByText("Wajib dipilih")).toBeVisible();
   expect(saveCalls).toBe(0);
 });
 
 test("accepts a valid form and shows the saved confirmation", async ({ page }) => {
-  await page.getByRole("button", { name: "Simpan" }).click();
+  await page.getByRole("button", { name: "Simpan", exact: true }).click();
   await expect(page.getByText("Tersimpan ✓")).toBeVisible();
 });
 

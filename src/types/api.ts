@@ -61,6 +61,7 @@ export const MonthlyReportSchema = z.object({
   income: z.number().nullable().optional(),
   expense: z.number().nullable().optional(),
   net: z.number().nullable().optional(),
+  savings_rate: z.number().nullable().optional(),
 });
 export type MonthlyReport = z.infer<typeof MonthlyReportSchema>;
 
@@ -112,3 +113,123 @@ export const SettingsFormSchema = z.object({
     .nonnegative("Tidak boleh negatif"),
 });
 export type SettingsFormValues = z.infer<typeof SettingsFormSchema>;
+
+// ---------- v3 ----------
+
+export const BudgetSchema = z.object({
+  account_code: z.string(),
+  account_name: z.string().nullable().optional(),
+  monthly_limit: z.number(),
+  spent: z.number(),
+  last_alert_at: z.string().nullable().optional(),
+});
+export type Budget = z.infer<typeof BudgetSchema>;
+export const BudgetsResponseSchema = z.object({ budgets: z.array(BudgetSchema) });
+
+export const GoalSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  target_amount: z.number(),
+  account_code: z.string().nullable().optional(),
+  target_date: z.string().nullable().optional(),
+  is_active: z.boolean(),
+  current_amount: z.number(),
+});
+export type Goal = z.infer<typeof GoalSchema>;
+export const GoalsResponseSchema = z.object({ goals: z.array(GoalSchema) });
+
+const RecurringLineSchema = z.object({
+  account_code: z.string(),
+  debit: z.number().optional(),
+  credit: z.number().optional(),
+});
+export const RecurringSchema = z.object({
+  id: z.number(),
+  doc_type: z.string(),
+  description: z.string().nullable().optional(),
+  lines: z.array(RecurringLineSchema),
+  frequency: z.enum(["daily", "weekly", "monthly"]),
+  next_run: z.string(),
+  is_active: z.boolean(),
+});
+export type Recurring = z.infer<typeof RecurringSchema>;
+export const RecurringResponseSchema = z.object({ recurring: z.array(RecurringSchema) });
+
+export const BillSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  amount: z.number(),
+  due_day: z.number().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  is_recurring: z.boolean(),
+  is_active: z.boolean(),
+  last_reminded_period: z.string().nullable().optional(),
+});
+export type Bill = z.infer<typeof BillSchema>;
+export const BillsResponseSchema = z.object({ bills: z.array(BillSchema) });
+
+export const TagSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  emoji: z.string().nullable().optional(),
+});
+export type Tag = z.infer<typeof TagSchema>;
+export const TagsResponseSchema = z.object({ tags: z.array(TagSchema) });
+
+export const RangeReportSchema = z.object({
+  date_from: z.string(),
+  date_to: z.string(),
+  revenue: z.array(IncomeStatementRowSchema).optional(),
+  expense: z.array(IncomeStatementRowSchema).optional(),
+  total_revenue: z.number().optional(),
+  total_expense: z.number().optional(),
+  net_income: z.number().optional(),
+});
+export type RangeReport = z.infer<typeof RangeReportSchema>;
+
+const CategoryForecastSchema = z.object({
+  code: z.string(),
+  account_name: z.string().nullable().optional(),
+  history: z.array(z.number()),
+  forecast: z.number().nullable().optional(),
+});
+export const ForecastSchema = z.object({
+  months: z.number(),
+  income_history: z.array(z.number()),
+  expense_history: z.array(z.number()),
+  income_forecast: z.number().nullable().optional(),
+  expense_forecast: z.number().nullable().optional(),
+  top_categories: z.array(CategoryForecastSchema),
+});
+export type Forecast = z.infer<typeof ForecastSchema>;
+
+// Budget/Goal/Recurring/Bill forms (dashboard CRUD) — mirror the bot wizards' validation.
+export const BudgetFormSchema = z.object({
+  account_code: z.string().min(1, "Wajib dipilih"),
+  monthly_limit: z.coerce.number({ message: "Harus berupa angka" }).positive("Harus > 0"),
+});
+export type BudgetFormValues = z.infer<typeof BudgetFormSchema>;
+
+export const GoalFormSchema = z.object({
+  name: z.string().min(1, "Wajib diisi"),
+  target_amount: z.coerce.number({ message: "Harus berupa angka" }).positive("Harus > 0"),
+  account_code: z.string().min(1, "Wajib dipilih"),
+  target_date: z.string().optional(),
+});
+export type GoalFormValues = z.infer<typeof GoalFormSchema>;
+
+export const BillFormSchema = z.object({
+  name: z.string().min(1, "Wajib diisi"),
+  amount: z.coerce.number({ message: "Harus berupa angka" }).positive("Harus > 0"),
+  due_day: z.coerce.number().int().min(1).max(31),
+});
+export type BillFormValues = z.infer<typeof BillFormSchema>;
+
+export const RecurringFormSchema = z.object({
+  description: z.string().min(1, "Wajib diisi"),
+  account_code: z.string().min(1, "Wajib dipilih"),
+  source: z.string().min(1, "Wajib dipilih"),
+  amount: z.coerce.number({ message: "Harus berupa angka" }).positive("Harus > 0"),
+  frequency: z.enum(["daily", "weekly", "monthly"]),
+});
+export type RecurringFormValues = z.infer<typeof RecurringFormSchema>;

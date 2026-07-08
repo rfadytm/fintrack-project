@@ -62,15 +62,20 @@ export default function Dashboard() {
 
       {monthly.error && <p className="text-red text-sm">Gagal memuat ringkasan bulanan: {monthly.error}</p>}
       <motion.div
-        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
         initial="hidden"
         animate="show"
         variants={{ show: { transition: { staggerChildren: 0.08 } } }}
       >
         {[
-          { label: "Pemasukan", value: m.income, color: "text-green" },
-          { label: "Pengeluaran", value: m.expense, color: "text-red" },
-          { label: "Net", value: m.net, color: "text-navy" },
+          { label: "Pemasukan", value: formatRupiah(m.income), color: "text-green" },
+          { label: "Pengeluaran", value: formatRupiah(m.expense), color: "text-red" },
+          { label: "Net", value: formatRupiah(m.net), color: "text-navy" },
+          {
+            label: "Savings Rate",
+            value: m.savings_rate != null ? `${Math.round(m.savings_rate * 100)}%` : "-",
+            color: "text-blue",
+          },
         ].map((s) => (
           <motion.div
             key={s.label}
@@ -78,7 +83,7 @@ export default function Dashboard() {
           >
             <Card>
               <div className="text-muted text-xs">{s.label}</div>
-              <div className={`text-xl font-bold mt-1 ${s.color}`}>{formatRupiah(s.value)}</div>
+              <div className={`text-xl font-bold mt-1 ${s.color}`}>{s.value}</div>
             </Card>
           </motion.div>
         ))}

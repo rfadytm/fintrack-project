@@ -4,19 +4,21 @@ Router: text commands + callback queries + state-machine text input.
 Whitelist OWNER_TELEGRAM_ID. Semua POST transaksi lewat RPC post_document (double-entry + period-lock guard).
 """
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 from http.server import BaseHTTPRequestHandler
 
-from shared import ocr
+from shared import activity, ocr
 from shared import telegram as tg
 from shared.auth import generate_token
 from shared.db import get_client
 from shared.doc_number import generate as gen_doc
 from shared.format import bulan_nama, fmt_date, rupiah, today_wib
+from shared.fx import FxError, convert as fx_convert
 from shared.http import read_json, send_json
 from shared.receipt_parser import parse_receipt
+from shared.retry import retry
 from shared.state import get_state, reset_state, set_state
 from shared.validator import AmountError, parse_amount
 
@@ -69,6 +71,15 @@ def main_menu():
     ]
 
 
+def continue_keyboard():
+    """Ditempel di bawah pesan sukses posting — lanjut input transaksi baru
+    tanpa perlu ketik /menu atau /start dulu."""
+    return [
+        [tg.btn("💸 Pengeluaran Lagi", "menu:expense"), tg.btn("💰 Pemasukan Lagi", "menu:income")],
+        [tg.btn("🔄 Transfer Lagi", "menu:transfer"), tg.btn("📲 Menu", "act:menu")],
+    ]
+
+
 def cmd_scan(chat_id):
     """Instruksi input foto struk (OCR). Foto apa pun yang dikirim ke bot langsung diproses."""
     tg.send_message(
@@ -98,6 +109,92 @@ def post_journal(doc_type, tx_date, description, lines, source="telegram"):
         },
     ).execute()
     return doc
+
+
+# ============================================================
+# v3: rate limiting / activity log helpers (db/16_activity_log.sql)
+# ============================================================
+def _chat_id_of(msg, cb):
+    if msg:
+        return msg["chat"]["id"]
+    if cb:
+        return cb["message"]["chat"]["id"]
+    return None
+
+
+def _action_label(msg, cb):
+    if cb:
+        return f"callback:{cb.get('data', '?')}"
+    if msg and "text" in msg:
+        t = msg["text"]
+        return f"command:{t.split()[0]}" if t.startswith("/") else "message"
+    if msg and "photo" in msg:
+        return "photo"
+    if msg and "document" in msg:
+        return "document"
+    return "unknown"
+
+
+# ============================================================
+# v3: budget alert (real-time, throttled) + anomaly warning (anti-abuse)
+# ============================================================
+def _month_spend(account_code, year, month):
+    res = (
+        db().table("journal_lines")
+        .select("debit_amount, transactions!inner(period_year, period_month, status)")
+        .eq("account_code", account_code)
+        .eq("transactions.period_year", year)
+        .eq("transactions.period_month", month)
+        .eq("transactions.status", "POSTED")
+        .execute()
+    )
+    return sum(r["debit_amount"] or 0 for r in res.data)
+
+
+def check_budget_alert(chat_id, account_code):
+    """Dipanggil setelah exp_post: kalau kategori ini punya budget & sudah kelampauan
+    (dan alert terakhir sudah > throttle menit lalu), kirim notifikasi."""
+    b = db().table("budgets").select("*").eq("account_code", account_code).execute()
+    if not b.data:
+        return
+    row = b.data[0]
+    today = today_wib()
+    spent = _month_spend(account_code, today.year, today.month)
+    limit = row["monthly_limit"]
+    if spent < limit:
+        return
+    throttle_mins = int(setting("budget_alert_throttle_mins", "120"))
+    last_alert = row.get("last_alert_at")
+    if last_alert and datetime.now(timezone.utc) - datetime.fromisoformat(last_alert) < timedelta(minutes=throttle_mins):
+        return
+    pct = round(spent / limit * 100) if limit else 0
+    tg.send_message(
+        chat_id,
+        f"⚠️ <b>Budget terlampaui!</b>\n{acc_name(account_code)}: {rupiah(spent)} / {rupiah(limit)} ({pct}%)",
+    )
+    db().table("budgets").update(
+        {"last_alert_at": datetime.now(timezone.utc).isoformat()}
+    ).eq("account_code", account_code).execute()
+
+
+def anomaly_warning(account_code, amount):
+    """Anti-abuse (bukan blocking): kalau amount menyimpang jauh (z-score) dari histori
+    nominal kategori ini, tambahkan satu baris warning ke preview — user tetap yang
+    memutuskan lanjut posting atau tidak."""
+    res = (
+        db().table("journal_lines")
+        .select("debit_amount, transactions!inner(status)")
+        .eq("account_code", account_code)
+        .eq("transactions.status", "POSTED")
+        .execute()
+    )
+    history = [r["debit_amount"] for r in res.data if r["debit_amount"]]
+    if len(history) < 5:
+        return ""
+    sensitivity = setting("alert_sensitivity", "normal")
+    if activity.flag_large_amount(amount, history, sensitivity):
+        return "\n\n⚠️ <i>Nominal ini jauh dari rata-rata pengeluaran kategori ini — pastikan sudah benar.</i>"
+    return ""
 
 
 # ============================================================
@@ -144,7 +241,7 @@ def process_receipt_image(chat_id, user_id, file_id, caption=None):
     tg.send_message(chat_id, "🧾 Memproses struk… (beberapa detik)")
     try:
         image = tg.download_file(file_id)
-        raw = ocr.extract_text(image)
+        raw = retry(lambda: ocr.extract_text(image))
     except ocr.OCRError as e:
         return tg.send_message(chat_id, f"⚠️ {e}\nKetik /menu untuk input manual.")
     except Exception as e:
@@ -247,11 +344,20 @@ def cmd_help(chat_id):
         "/hari — ringkasan hari ini\n"
         "/bulan [YYYY-MM] — ringkasan bulan\n"
         "/recent [n] — transaksi terakhir\n"
+        "/undo — batalkan 1 transaksi terakhir\n"
         "/getlink — link login dashboard\n"
         "/lock YYYY-MM — kunci periode\n"
         "/setup — saldo awal (sekali)\n"
         "/reverse DOC — batalkan transaksi\n"
-        "/reset — batalkan input berjalan",
+        "/reset — batalkan input berjalan\n\n"
+        "<b>v3:</b>\n"
+        "/budget kode limit · /budgets — atur & lihat budget\n"
+        "/goal · /goals — target tabungan\n"
+        "/recurring [list] — transaksi berulang\n"
+        "/bill · /bills — tagihan\n"
+        "/tag doc nama1,nama2 · /tags — tag transaksi\n"
+        "/kategori add nama — kategori beban custom\n"
+        "/convert jumlah DARI KE — konversi mata uang",
     )
 
 
@@ -384,6 +490,233 @@ def cmd_reverse(chat_id, doc):
         tg.send_message(chat_id, f"⚠️ Gagal reverse: {e}")
 
 
+def cmd_undo(chat_id):
+    """Shortcut: reverse SATU transaksi paling baru, tanpa perlu buka /recent dulu."""
+    res = (
+        db().table("transactions")
+        .select("doc_number, description, doc_type")
+        .eq("status", "POSTED")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return tg.send_message(chat_id, "Tidak ada transaksi untuk di-undo.")
+    t = res.data[0]
+    kb = [[tg.btn("↩️ Ya, undo", f"rv:{t['doc_number']}"), tg.btn("✖️ Batal", "act:cancel")]]
+    tg.send_message(
+        chat_id,
+        f"Undo transaksi terakhir?\n\n{t['doc_number']} — {t['description'] or t['doc_type']}",
+        keyboard=kb,
+    )
+
+
+# ============================================================
+# v3: Budget
+# ============================================================
+def cmd_budget_set(chat_id, args):
+    if len(args) < 2:
+        return tg.send_message(chat_id, "Format: /budget <kode_akun> <limit>\nContoh: /budget 5110 500000")
+    code, amount_text = args[0], args[1]
+    acc = db().table("chart_of_accounts").select("code").eq("code", code).eq("is_header", False).execute()
+    if not acc.data:
+        return tg.send_message(chat_id, f"⚠️ Kode akun {code} tidak ditemukan / bukan akun postable.")
+    try:
+        limit = parse_amount(amount_text)
+    except AmountError as e:
+        return tg.send_message(chat_id, f"⚠️ {e}")
+    db().table("budgets").upsert({"account_code": code, "monthly_limit": limit}).execute()
+    tg.send_message(chat_id, f"✅ Budget {acc_name(code)} ({code}): {rupiah(limit)}/bulan.")
+
+
+def cmd_budgets_list(chat_id):
+    res = db().table("budgets").select("*").execute()
+    if not res.data:
+        return tg.send_message(chat_id, "Belum ada budget. /budget <kode_akun> <limit> untuk mulai.")
+    today = today_wib()
+    lines = ["💰 <b>Budget bulan ini</b>\n"]
+    for b in res.data:
+        spent = _month_spend(b["account_code"], today.year, today.month)
+        pct = round(spent / b["monthly_limit"] * 100) if b["monthly_limit"] else 0
+        flag = "🔴" if pct >= 100 else "🟡" if pct >= 80 else "🟢"
+        lines.append(f"{flag} {acc_name(b['account_code'])}: {rupiah(spent)} / {rupiah(b['monthly_limit'])} ({pct}%)")
+    tg.send_message(chat_id, "\n".join(lines))
+
+
+# ============================================================
+# v3: Goal wizard (GOAL_NAME -> GOAL_AMOUNT -> pilih akun via callback goal_acc:)
+# ============================================================
+def cmd_goal_start(chat_id, user_id):
+    set_state(user_id, "GOAL_NAME", {})
+    tg.send_message(chat_id, '🎯 Nama goal (mis. "Laptop baru"):')
+
+
+def handle_goal_input(chat_id, user_id, state, text):
+    d = get_state(user_id)["state_data"]
+    if state == "GOAL_NAME":
+        d["name"] = text
+        set_state(user_id, "GOAL_AMOUNT", d)
+        return tg.send_message(chat_id, "💵 Target nominal (mis. 10jt):")
+    if state == "GOAL_AMOUNT":
+        try:
+            d["target_amount"] = parse_amount(text)
+        except AmountError as e:
+            return tg.send_message(chat_id, f"⚠️ {e}")
+        set_state(user_id, "GOAL_ACCOUNT", d)
+        kb = tg.rows([tg.btn(a["account_name"], f"goal_acc:{a['code']}") for a in cash_accounts()], 2)
+        return tg.send_message(chat_id, "🏦 Progress goal dihitung dari saldo akun mana?", keyboard=kb)
+
+
+def cmd_goals_list(chat_id):
+    res = db().table("goals").select("*").eq("is_active", True).execute()
+    if not res.data:
+        return tg.send_message(chat_id, "Belum ada goal. /goal untuk mulai.")
+    lines = ["🎯 <b>Goals</b>"]
+    for g in res.data:
+        cur = balance_of(g["account_code"]) if g["account_code"] else 0
+        pct = min(round(cur / g["target_amount"] * 100), 100) if g["target_amount"] else 0
+        bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
+        lines.append(f"\n<b>{g['name']}</b>\n{rupiah(cur)} / {rupiah(g['target_amount'])}\n{bar} {pct}%")
+    tg.send_message(chat_id, "\n".join(lines))
+
+
+# ============================================================
+# v3: Recurring transaction wizard
+# (RECURRING_DESC -> pilih kategori/akun beban [reuse exp flow, prefix "rec"] ->
+#  RECURRING_SOURCE -> RECURRING_AMOUNT -> pilih frekuensi via callback rec_freq:)
+# ============================================================
+def cmd_recurring_start(chat_id, user_id):
+    set_state(user_id, "RECURRING_DESC", {})
+    tg.send_message(chat_id, '🔁 Nama/keterangan transaksi berulang (mis. "Langganan Netflix"):')
+
+
+def cmd_recurring_list(chat_id):
+    res = db().table("recurring_transactions").select("*").eq("is_active", True).execute()
+    if not res.data:
+        return tg.send_message(chat_id, "Belum ada transaksi berulang. /recurring untuk mulai.")
+    lines = ["🔁 <b>Transaksi Berulang</b>\n"]
+    for r in res.data:
+        total = sum(l.get("debit") or 0 for l in r["lines"])
+        lines.append(f"#{r['id']} {r['description']} — {rupiah(total)}/{r['frequency']} (berikutnya {r['next_run']})")
+    tg.send_message(chat_id, "\n".join(lines))
+
+
+# ============================================================
+# v3: Bill wizard (BILL_NAME -> BILL_AMOUNT -> BILL_DUE)
+# ============================================================
+def cmd_bill_start(chat_id, user_id):
+    set_state(user_id, "BILL_NAME", {})
+    tg.send_message(chat_id, '🧾 Nama tagihan (mis. "Listrik PLN"):')
+
+
+def handle_bill_input(chat_id, user_id, state, text):
+    d = get_state(user_id)["state_data"]
+    if state == "BILL_NAME":
+        d["name"] = text
+        set_state(user_id, "BILL_AMOUNT", d)
+        return tg.send_message(chat_id, "💵 Nominal tagihan:")
+    if state == "BILL_AMOUNT":
+        try:
+            d["amount"] = parse_amount(text)
+        except AmountError as e:
+            return tg.send_message(chat_id, f"⚠️ {e}")
+        set_state(user_id, "BILL_DUE", d)
+        return tg.send_message(chat_id, "📅 Tanggal jatuh tempo tiap bulan (1-31):")
+    if state == "BILL_DUE":
+        try:
+            due_day = int(text)
+            if not (1 <= due_day <= 31):
+                raise ValueError
+        except ValueError:
+            return tg.send_message(chat_id, "⚠️ Ketik angka 1-31.")
+        db().table("bills").insert(
+            {"name": d["name"], "amount": d["amount"], "due_day": due_day, "is_recurring": True}
+        ).execute()
+        reset_state(user_id)
+        return tg.send_message(chat_id, f"✅ Tagihan \"{d['name']}\" dibuat, jatuh tempo tgl {due_day} tiap bulan.")
+
+
+def cmd_bills_list(chat_id):
+    res = db().table("bills").select("*").eq("is_active", True).execute()
+    if not res.data:
+        return tg.send_message(chat_id, "Belum ada tagihan. /bill untuk mulai.")
+    lines = ["🧾 <b>Tagihan</b>\n"]
+    for b in res.data:
+        due = f"tgl {b['due_day']}" if b.get("due_day") else str(b.get("due_date"))
+        lines.append(f"#{b['id']} {b['name']}: {rupiah(b['amount'])} ({due})")
+    tg.send_message(chat_id, "\n".join(lines))
+
+
+# ============================================================
+# v3: Tags
+# ============================================================
+def cmd_tag(chat_id, args):
+    if len(args) < 2:
+        return tg.send_message(chat_id, "Format: /tag <doc_number> <tag1,tag2,...>")
+    doc, tag_str = args[0], args[1]
+    names = [t.strip() for t in tag_str.split(",") if t.strip()]
+    tx = db().table("transactions").select("doc_number").eq("doc_number", doc).execute()
+    if not tx.data:
+        return tg.send_message(chat_id, f"⚠️ Dokumen {doc} tidak ditemukan.")
+    for name in names:
+        existing = db().table("tags").select("id").eq("name", name).execute()
+        tag_id = existing.data[0]["id"] if existing.data else db().table("tags").insert({"name": name}).execute().data[0]["id"]
+        db().table("transaction_tags").upsert({"doc_number": doc, "tag_id": tag_id}).execute()
+    tg.send_message(chat_id, f"✅ Tag {', '.join(names)} ditambahkan ke {doc}.")
+
+
+def cmd_tags_list(chat_id):
+    res = db().table("tags").select("name, emoji").execute()
+    if not res.data:
+        return tg.send_message(chat_id, "Belum ada tag. /tag <doc_number> <nama> untuk mulai.")
+    tg.send_message(chat_id, "🏷️ Tags: " + ", ".join(f"{t.get('emoji') or ''}{t['name']}" for t in res.data))
+
+
+# ============================================================
+# v3: Custom category — kode auto dari slot kosong 5940-5980 (grup 5900, lihat COA).
+# ============================================================
+def cmd_kategori_add(chat_id, args):
+    if len(args) < 2 or args[0].lower() != "add":
+        return tg.send_message(chat_id, "Format: /kategori add <nama>")
+    name = " ".join(args[1:])
+    existing = db().table("chart_of_accounts").select("code").like("code", "59%").execute()
+    used = {r["code"] for r in existing.data}
+    code = next((str(c) for c in range(5940, 5990, 10) if str(c) not in used), None)
+    if not code:
+        return tg.send_message(chat_id, "⚠️ Slot kategori custom penuh.")
+    db().table("chart_of_accounts").insert(
+        {
+            "code": code,
+            "parent_code": "5900",
+            "level": 3,
+            "account_name": name,
+            "account_type": "beban",
+            "normal_balance": "debit",
+            "is_header": False,
+            "is_active": True,
+            "is_custom": True,
+        }
+    ).execute()
+    tg.send_message(chat_id, f"✅ Kategori \"{name}\" dibuat ({code}).")
+
+
+# ============================================================
+# v3: Currency conversion (frankfurter.app, gratis tanpa API key)
+# ============================================================
+def cmd_convert(chat_id, args):
+    if len(args) < 3:
+        return tg.send_message(chat_id, "Format: /convert <jumlah> <DARI> <KE>\nContoh: /convert 100 USD IDR")
+    try:
+        amount = float(args[0].replace(",", "."))
+    except ValueError:
+        return tg.send_message(chat_id, "⚠️ Jumlah tidak valid.")
+    try:
+        result = fx_convert(amount, args[1], args[2])
+    except FxError as e:
+        return tg.send_message(chat_id, f"⚠️ {e}")
+    tg.send_message(chat_id, f"💱 {amount:g} {args[1].upper()} ≈ {result:,.2f} {args[2].upper()}")
+
+
 # ============================================================
 # Setup wizard (B6: guard double-run)
 # ============================================================
@@ -475,6 +808,24 @@ def show_accounts(chat_id, mid, cat_id, prefix):
     tg.edit_message(chat_id, mid, "Pilih akun:", keyboard=kb)
 
 
+def send_categories(chat_id, ctype, prefix):
+    """Sama seperti show_categories tapi kirim pesan baru (bukan edit) — dipakai wizard
+    yang mulai dari input teks (mis. /recurring), bukan dari tombol menu utama."""
+    res = (
+        db().table("bot_categories")
+        .select("id, name, emoji")
+        .eq("category_type", ctype)
+        .eq("is_active", True)
+        .order("display_order")
+        .execute()
+    )
+    kb = tg.rows(
+        [tg.btn(f"{c['emoji']} {c['name']}", f"{prefix}_cat:{c['id']}") for c in res.data], 2
+    )
+    kb.append([tg.btn("✖️ Batal", "act:cancel")])
+    tg.send_message(chat_id, "Pilih kategori beban:", keyboard=kb)
+
+
 def expense_preview(chat_id, user_id):
     d = get_state(user_id)["state_data"]
     amt = d["amount"]
@@ -483,6 +834,7 @@ def expense_preview(chat_id, user_id):
         f"Dr {d['account_code']} {acc_name(d['account_code'])}: {rupiah(amt)}\n"
         f"Cr {d['source']} {acc_name(d['source'])}: {rupiah(amt)}\n\n"
         f"Ket: {d.get('desc') or '-'}"
+        + anomaly_warning(d["account_code"], amt)
     )
     kb = [[tg.btn("✅ Posting", "exp_post"), tg.btn("✖️ Batal", "act:cancel")]]
     tg.send_message(chat_id, text, keyboard=kb)
@@ -583,6 +935,8 @@ def handle_callback(cb):
         return cmd_nihil(chat_id, user_id)
     if data == "act:scan":
         return cmd_scan(chat_id)
+    if data == "act:menu":
+        return tg.send_message(chat_id, "📲 Menu utama:", keyboard=main_menu())
 
     # Receipt OCR actions (v2): rcp:save:<id> | rcp:cancel:<id>
     if data.startswith("rcp:"):
@@ -629,9 +983,20 @@ def handle_callback(cb):
                     {"status": "confirmed", "doc_number": doc}
                 ).eq("id", d["receipt_id"]).execute()
             reset_state(user_id)
-            tg.send_message(chat_id, f"✅ Tercatat {doc}. Saldo {d['source']}: {rupiah(balance_of(d['source']))}")
+            tg.send_message(
+                chat_id,
+                f"✅ Tercatat {doc}. Saldo {d['source']}: {rupiah(balance_of(d['source']))}",
+                keyboard=continue_keyboard(),
+            )
         except Exception as e:
             tg.send_message(chat_id, f"⚠️ Gagal: {e}")
+            return
+        try:
+            # Best-effort: transaksi SUDAH tercatat di atas, jangan sampai budget-check
+            # gagal bikin user kira posting-nya gagal (lihat komentar do_POST soal ini).
+            check_budget_alert(chat_id, d["account_code"])
+        except Exception as e:
+            print(f"[webhook] check_budget_alert gagal (non-fatal): {e!r}")
         return
 
     # Income flow
@@ -656,7 +1021,11 @@ def handle_callback(cb):
                 ],
             )
             reset_state(user_id)
-            tg.send_message(chat_id, f"✅ Tercatat {doc}. Saldo {d['dest']}: {rupiah(balance_of(d['dest']))}")
+            tg.send_message(
+                chat_id,
+                f"✅ Tercatat {doc}. Saldo {d['dest']}: {rupiah(balance_of(d['dest']))}",
+                keyboard=continue_keyboard(),
+            )
         except Exception as e:
             tg.send_message(chat_id, f"⚠️ Gagal: {e}")
         return
@@ -675,10 +1044,56 @@ def handle_callback(cb):
         try:
             doc = post_journal("TR", today_wib(), d.get("desc", "Transfer"), d["lines"])
             reset_state(user_id)
-            tg.send_message(chat_id, f"✅ Transfer tercatat {doc}.")
+            tg.send_message(chat_id, f"✅ Transfer tercatat {doc}.", keyboard=continue_keyboard())
         except Exception as e:
             tg.send_message(chat_id, f"⚠️ Gagal: {e}")
         return
+
+    # v3: Goal wizard — nama & target sudah di state_data, tinggal pilih akun acuan progress.
+    if data.startswith("goal_acc:"):
+        d = get_state(user_id)["state_data"]
+        code = data.split(":")[1]
+        db().table("goals").insert(
+            {"name": d["name"], "target_amount": d["target_amount"], "account_code": code}
+        ).execute()
+        reset_state(user_id)
+        return tg.edit_message(chat_id, mid, f"✅ Goal \"{d['name']}\" dibuat — target {rupiah(d['target_amount'])}.")
+
+    # v3: Recurring transaction wizard — reuse category/account picker milik alur expense.
+    if data.startswith("rec_cat:"):
+        return show_accounts(chat_id, mid, int(data.split(":")[1]), "rec")
+    if data.startswith("rec_acc:"):
+        d = get_state(user_id)["state_data"]
+        d["account_code"] = data.split(":")[1]
+        set_state(user_id, "RECURRING_SOURCE", d)
+        kb = tg.rows([tg.btn(a["account_name"], f"rec_src:{a['code']}") for a in cash_accounts()], 2)
+        return tg.edit_message(chat_id, mid, "🏦 Sumber dana:", keyboard=kb)
+    if data.startswith("rec_src:"):
+        d = get_state(user_id)["state_data"]
+        d["source"] = data.split(":")[1]
+        set_state(user_id, "RECURRING_AMOUNT", d)
+        return tg.edit_message(chat_id, mid, "💵 Nominal per transaksi:")
+    if data.startswith("rec_freq:"):
+        d = get_state(user_id)["state_data"]
+        freq = data.split(":")[1]
+        today = today_wib()
+        lines = [
+            {"account_code": d["account_code"], "debit": d["amount"], "credit": 0},
+            {"account_code": d["source"], "debit": 0, "credit": d["amount"]},
+        ]
+        db().table("recurring_transactions").insert(
+            {
+                "doc_type": "KK",
+                "description": d["desc"],
+                "lines": lines,
+                "frequency": freq,
+                "next_run": today.isoformat(),
+            }
+        ).execute()
+        reset_state(user_id)
+        return tg.edit_message(
+            chat_id, mid, f"✅ Recurring \"{d['desc']}\" dibuat ({freq}), mulai {fmt_date(today)}."
+        )
 
     # Reports nav
     if data.startswith("rep:month:"):
@@ -721,6 +1136,24 @@ def handle_text(chat_id, user_id, text):
 
     if state.startswith("SETUP_"):
         return handle_setup_input(chat_id, user_id, state, text)
+
+    # v3: wizard states
+    if state.startswith("GOAL_"):
+        return handle_goal_input(chat_id, user_id, state, text)
+    if state.startswith("BILL_"):
+        return handle_bill_input(chat_id, user_id, state, text)
+    if state == "RECURRING_DESC":
+        d["desc"] = text
+        set_state(user_id, "RECURRING_CATEGORY", d)
+        return send_categories(chat_id, "expense", "rec")
+    if state == "RECURRING_AMOUNT":
+        try:
+            d["amount"] = parse_amount(text)
+        except AmountError as e:
+            return tg.send_message(chat_id, f"⚠️ {e}")
+        set_state(user_id, "RECURRING_FREQ", d)
+        kb = [[tg.btn("Harian", "rec_freq:daily"), tg.btn("Mingguan", "rec_freq:weekly"), tg.btn("Bulanan", "rec_freq:monthly")]]
+        return tg.send_message(chat_id, "🔁 Frekuensi:", keyboard=kb)
 
     # Amount inputs
     if state in ("EXPENSE_AMOUNT", "INCOME_AMOUNT", "TRANSFER_AMOUNT"):
@@ -801,6 +1234,34 @@ def handle_command(chat_id, user_id, text):
     if cmd == "/skip":
         return handle_text(chat_id, user_id, "/skip") if False else tg.send_message(chat_id, "Tidak ada yang di-skip.")
 
+    # v3 commands
+    if cmd == "/undo":
+        return cmd_undo(chat_id)
+    if cmd == "/budget":
+        return cmd_budget_set(chat_id, parts[1:])
+    if cmd == "/budgets":
+        return cmd_budgets_list(chat_id)
+    if cmd == "/goal":
+        return cmd_goal_start(chat_id, user_id)
+    if cmd == "/goals":
+        return cmd_goals_list(chat_id)
+    if cmd == "/recurring":
+        if len(parts) > 1 and parts[1].lower() == "list":
+            return cmd_recurring_list(chat_id)
+        return cmd_recurring_start(chat_id, user_id)
+    if cmd == "/bill":
+        return cmd_bill_start(chat_id, user_id)
+    if cmd == "/bills":
+        return cmd_bills_list(chat_id)
+    if cmd == "/tag":
+        return cmd_tag(chat_id, parts[1:])
+    if cmd == "/tags":
+        return cmd_tags_list(chat_id)
+    if cmd == "/kategori":
+        return cmd_kategori_add(chat_id, parts[1:])
+    if cmd == "/convert":
+        return cmd_convert(chat_id, parts[1:])
+
     tg.send_message(chat_id, "Perintah tidak dikenal. /help")
 
 
@@ -824,6 +1285,19 @@ class handler(BaseHTTPRequestHandler):
         if OWNER_ID and from_id != OWNER_ID:
             return send_json(self, 200, {"ok": True})  # diamkan non-owner
 
+        # v3: rate limiting + activity log (db/16_activity_log.sql).
+        # Kegagalan di sini TIDAK boleh menghentikan bot utamanya — cuma best-effort.
+        chat_id = _chat_id_of(msg, cb)
+        if from_id and chat_id:
+            try:
+                rate_limit = int(setting("rate_limit_per_minute", "20"))
+                if activity.count_recent(from_id, 60) >= rate_limit:
+                    tg.send_message(chat_id, "⏳ Terlalu banyak pesan dalam 1 menit terakhir, tunggu sebentar ya.")
+                    return send_json(self, 200, {"ok": True})
+                activity.log(from_id, _action_label(msg, cb))
+            except Exception as e:
+                print(f"[webhook] rate-limit/activity-log gagal (lanjut tanpa itu): {e!r}")
+
         try:
             if cb:
                 handle_callback(cb)
@@ -834,8 +1308,11 @@ class handler(BaseHTTPRequestHandler):
             elif msg and "text" in msg:
                 handle_text(msg["chat"]["id"], from_id, msg["text"])
         except Exception as e:
-            # jangan biarkan Telegram retry storm; log & balas 200
+            # Blindspot fix: pesan error mentah (str(e)) bisa bocorin detail teknis ke
+            # user. Detail asli di-log ke stdout (masuk Vercel function logs); user cuma
+            # lihat pesan ramah. Jangan biarkan Telegram retry storm — tetap balas 200.
             if msg:
-                tg.send_message(msg["chat"]["id"], f"⚠️ Error: {e}")
+                print(f"[webhook] unhandled error: {e!r}")
+                tg.send_message(msg["chat"]["id"], "⚠️ Terjadi kesalahan. Coba lagi, atau ketik /menu untuk mulai ulang.")
 
         send_json(self, 200, {"ok": True})

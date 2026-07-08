@@ -2442,3 +2442,96 @@ beban
 🔵 DORMANT template bisnis: ~28 akun
 Semua akun is_active=true di DB — DORMANT hanya berarti is_active=false di bot_categories mapping.
 Bisa diaktifkan kapan saja via dashboard tanpa schema change.
+
+9. CHANGELOG — v2 & v3 (dokumen ini di atas cuma cerita v1)
+9.1 Kenapa ada bagian ini
+Dokumen di atas (bagian 1-8 + appendix COA) adalah build plan v1 ASLI dan tidak pernah
+diupdate sejak — v2 dan v3 dikerjakan lewat sesi terpisah dan didokumentasikan di file
+lain (docs/CHANGELOG_v2.md, docs/API.md, README.md). Bagian ini cuma RINGKASAN supaya
+doc.txt tetap jadi satu titik referensi; untuk detail penuh baca file aslinya.
+9.2 v2 — OCR Struk + API Layer Integrasi (2026-07-03)
+Ringkasan lengkap: docs/CHANGELOG_v2.md. Poin utama:
+- Foto/screenshot struk → OCR (OCR.space free tier) → parse (merchant/nominal/tanggal)
+  → konfirmasi via bot → posting KK. Tabel baru: receipts.
+- API layer integrasi: POST /api/transactions (buat transaksi dari luar) + POST
+  /api/receipts/parse, auth cookie ATAU header X-API-Key (FINTRACK_API_KEY, opsional).
+- Keputusan arsitektur: proposal migrasi ke FastAPI+Railway DITOLAK — tetap 100% Vercel
+  serverless + Supabase free, demi same-origin auth & nol biaya baru.
+9.3 Migrasi Frontend ke TypeScript + Tailwind + React Query + Zod + Vitest/Playwright (2026-07-08)
+Dashboard React (src/) yang tadinya JS polos + CSS tangan + cache fetch buatan sendiri,
+di-rewrite total: TypeScript di semua src/, Tailwind v4 (tema glassmorphic/gradient,
+lihat src/components/AppBackground.tsx), komponen ala shadcn/ui (Radix + class-variance-
+authority, src/components/ui/*), Framer Motion (transisi halaman), React Query
+(gantikan cache manual di hooks/), Zod (validasi form + validasi runtime bentuk
+response API), plus test suite baru: Vitest (unit/komponen) + Playwright (e2e, API
+di-mock karena login asli lewat magic-link Telegram tak bisa dites headless).
+Blindspot yang dibenahi di migrasi ini: error API yang tadinya didiamkan sekarang
+ditampilkan, sesi yang expired di tengah pemakaian sekarang redirect ke /login
+otomatis, tidak ada lagi layar putih kalau ada render error (ErrorBoundary), label
+form di Settings sekarang terhubung ke input-nya (aksesibilitas), logout butuh
+konfirmasi, field angka di-validasi Zod (bukan string mentah), dan format Rupiah
+untuk nominal negatif diperbaiki.
+9.4 v3 — Budget/Goals/Recurring/Bills/Tags/Forecast/Laporan Terjadwal (2026-07-09)
+Batch fitur terbesar sejauh ini — ~40 item dari review kelayakan "harus tetap 100%
+gratis" (lihat artifact review yang dibagikan terpisah). Semua yang lolos review
+(gratis atau tinggal tweak) diimplementasikan; yang butuh biaya (fitur LLM) atau
+scope besar (split expenses jadi app "keuangan bersama") sengaja DI-SKIP.
+
+Tabel & kolom baru (db/12-17_*.sql — belum dijalankan ke Supabase produksi, harus
+dijalankan manual sama seperti db/11_receipts.sql dulu):
+- budgets, goals, recurring_transactions, bills, tags, transaction_tags, activity_log
+- chart_of_accounts.is_custom (tandai kategori beban yang ditambah user sendiri)
+- Preferensi baru di bot_settings: currency_preference, timezone, daily/weekly_report_
+  enabled, alert_sensitivity, rate_limit_per_minute, budget_alert_throttle_mins
+
+Modul Python baru (shared/): forecast.py (z-score + regresi linear, stdlib murni,
+tanpa numpy — konsisten prinsip B7 anti-bloat), fx.py (konversi mata uang via
+frankfurter.app, gratis tanpa API key), retry.py, sparkline.py, activity.py
+(backing store rate limiting + anti-abuse + activity log sekaligus), scheduling.py.
+
+Bot (api/telegram/webhook.py) — command & wizard baru: /undo (reverse transaksi
+terakhir 1 tap), /budget /budgets, /goal /goals, /recurring [list], /bill /bills,
+/tag /tags, /kategori add, /convert. Plus: rate limiting per user, pesan error umum
+yang lebih ramah (detail teknis di-log ke server bukan dikirim ke user), peringatan
+anti-abuse (nominal tak wajar) di preview sebelum posting, alert budget real-time
+setelah posting pengeluaran (throttled), DAN — perbaikan alur atas permintaan user:
+setiap posting sukses (pengeluaran/pemasukan/transfer) sekarang menampilkan tombol
+"lanjut transaksi" di bawah pesan sukses, jadi tidak perlu ketik /menu atau /start
+lagi untuk input berikutnya (lihat continue_keyboard()).
+
+API baru/diperluas: /api/budgets, /api/goals, /api/recurring, /api/bills, /api/tags
+(+/api/tags/assign), POST /api/accounts (kategori custom), /api/reports/range
+(rentang tanggal bebas), /api/reports/forecast, savings_rate di /api/reports/monthly,
+filter ?tag= di GET /api/transactions.
+
+Cron baru (api/cron/{daily,weekly,monthly,annual,housekeeping}.py, dipicu
+.github/workflows/scheduled-reports.yml) — auth pakai CRON_SECRET terpisah dari
+FINTRACK_API_KEY (beda tujuan, beda blast-radius kalau bocor):
+- daily (09:00 WIB): ringkasan hari ini + auto-post recurring transactions jatuh
+  tempo + reminder tagihan H-3
+- weekly (Minggu): breakdown kategori + sparkline + deteksi anomali (z-score,
+  keputusan user: mingguan bukan bulanan) + progress goals
+- monthly (tgl 1): perbandingan bulan lalu vs bulan sebelumnya
+- annual (1 Jan): ringkasan tahunan + top 5 kategori beban
+- housekeeping (tiap 30 menit): sapu bot_state yang macet >30 menit, notify user
+  proaktif (sebelumnya cuma reset pasif tanpa pemberitahuan)
+
+Dashboard (src/): 4 halaman baru (Budgets, Goals, Recurring, Bills) dengan CRUD
+lengkap — sesuai keputusan user, dikelola dari BOT dan DASHBOARD sekaligus, bukan
+salah satu saja. Tambahan di halaman lama: kategori custom di COA, kelola tags +
+preferensi v3 di Settings, filter tag di Jurnal, export CSV/JSON/PDF (selain Excel
+yang sudah ada), tab rentang-tanggal-bebas + forecast di Laporan, savings-rate di
+Dashboard.
+
+Testing: 60 test Python baru (pytest — forecast, activity/rate-limit, fx, scheduling,
+simulasi wizard bot lewat pemanggilan fungsi langsung karena tidak ada token bot/
+Supabase asli di lingkungan dev), tambahan test Vitest (skema Zod, util CSV,
+komponen) dan Playwright e2e (4 halaman baru, API di-mock).
+
+Langkah manual yang masih perlu dilakukan user (tidak dijalankan otomatis):
+1. Jalankan db/12_budgets_goals.sql s.d. db/17_v3_preferences.sql di Supabase.
+2. Tambah secret CRON_SECRET (Vercel env + GitHub Actions secret) dan APP_URL
+   (GitHub Actions secret, URL produksi Vercel) supaya scheduled-reports.yml jalan.
+3. Redeploy Vercel, lalu jalankan workflow_dispatch manual sekali untuk memastikan
+   tiap cron job (daily/weekly/monthly/annual/housekeeping) hijau sebelum percaya
+   jadwal otomatisnya.

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useApp } from "../context/AppContext";
 import { useReport } from "../hooks/useReports";
 import { api } from "../utils/api";
@@ -31,6 +33,8 @@ export default function Reports() {
           <TabsList>
             <TabsTrigger value="is">Laba Rugi</TabsTrigger>
             <TabsTrigger value="tb">Trial Balance</TabsTrigger>
+            <TabsTrigger value="range">Rentang Tanggal</TabsTrigger>
+            <TabsTrigger value="forecast">Forecast</TabsTrigger>
           </TabsList>
           <TabsContent value="is">
             <IncomeStatement {...period} />
@@ -38,9 +42,104 @@ export default function Reports() {
           <TabsContent value="tb">
             <TrialBalance {...period} />
           </TabsContent>
+          <TabsContent value="range">
+            <RangeAnalysis />
+          </TabsContent>
+          <TabsContent value="forecast">
+            <ForecastCard />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
+  );
+}
+
+function RangeAnalysis() {
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
+  const [applied, setApplied] = useState<{ from: string; to: string } | null>(null);
+
+  const rangeQuery = useQuery({
+    queryKey: ["reports", "range", applied?.from, applied?.to],
+    queryFn: () => api.reportRange(applied!.from, applied!.to),
+    enabled: !!applied,
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Analisis Rentang Tanggal Bebas</CardTitle>
+      </CardHeader>
+      <div className="flex gap-3 items-end flex-wrap mb-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted">Dari</label>
+          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted">Sampai</label>
+          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </div>
+        <Button onClick={() => setApplied({ from: dateFrom, to: dateTo })}>Tampilkan</Button>
+      </div>
+      {rangeQuery.isLoading && <Skeleton className="h-48" />}
+      {rangeQuery.error && <p className="text-red text-sm">{(rangeQuery.error as Error).message}</p>}
+      {rangeQuery.data && (
+        <>
+          <Section title="Pendapatan" rows={rangeQuery.data.revenue} total={rangeQuery.data.total_revenue} />
+          <Section title="Beban" rows={rangeQuery.data.expense} total={rangeQuery.data.total_expense} />
+          <div className={`mt-4 font-bold text-lg ${(rangeQuery.data.net_income || 0) >= 0 ? "text-green" : "text-red"}`}>
+            Net: {formatRupiah(rangeQuery.data.net_income)}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function ForecastCard() {
+  const forecastQuery = useQuery({ queryKey: ["reports", "forecast"], queryFn: () => api.forecast(6) });
+  if (forecastQuery.isLoading) return <Skeleton className="h-64" />;
+  if (forecastQuery.error) return <p className="text-red text-sm">{(forecastQuery.error as Error).message}</p>;
+  const d = forecastQuery.data;
+  if (!d) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Proyeksi Bulan Depan ({d.months} bulan histori)</CardTitle>
+      </CardHeader>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div>
+          <div className="text-muted text-xs">Proyeksi Pemasukan</div>
+          <div className="text-xl font-bold text-green mt-1">{formatRupiah(d.income_forecast)}</div>
+        </div>
+        <div>
+          <div className="text-muted text-xs">Proyeksi Pengeluaran</div>
+          <div className="text-xl font-bold text-red mt-1">{formatRupiah(d.expense_forecast)}</div>
+        </div>
+      </div>
+      {d.top_categories.length > 0 && (
+        <>
+          <h4 className="text-navy mb-1">Tren kategori tertinggi</h4>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Kategori</TableHead>
+                <TableHead className="text-right">Proyeksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {d.top_categories.map((c) => (
+                <TableRow key={c.code}>
+                  <TableCell>{c.account_name || c.code}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatRupiah(c.forecast)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </>
+      )}
+    </Card>
   );
 }
 

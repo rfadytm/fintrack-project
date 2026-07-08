@@ -7,6 +7,10 @@ const links: [string, string][] = [
   ["/ledger", "Buku Besar"],
   ["/reports", "Laporan"],
   ["/coa", "COA"],
+  ["/budgets", "Budget"],
+  ["/goals", "Goals"],
+  ["/recurring", "Berulang"],
+  ["/bills", "Tagihan"],
   ["/settings", "Pengaturan"],
 ];
 

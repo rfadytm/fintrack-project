@@ -2,7 +2,7 @@
 import json
 from urllib.parse import parse_qs, urlparse
 
-from shared.auth import parse_cookie, verify_api_key, verify_session
+from shared.auth import parse_cookie, verify_api_key, verify_cron_secret, verify_session
 
 
 def send_json(handler, status: int, obj, extra_headers: dict | None = None):
@@ -64,6 +64,17 @@ def require_auth(handler) -> dict | None:
         return {"via": "api_key"}
     send_json(handler, 401, {"error": "unauthorized"})
     return None
+
+
+def require_cron(handler) -> bool:
+    """Auth untuk endpoint api/cron/* — dipanggil GitHub Actions, bukan browser.
+
+    Return True, atau kirim 401 dan return False.
+    """
+    if verify_cron_secret(handler.headers.get("X-Cron-Secret")):
+        return True
+    send_json(handler, 401, {"error": "unauthorized"})
+    return False
 
 
 def paginate(query: dict, default_limit: int = 50, max_limit: int = 200):

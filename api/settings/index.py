@@ -14,6 +14,14 @@ EDITABLE = {
     "savings_account",
     "kas_kecil_target",
     "bi_fast_fee",
+    # v3 preferences (db/17_v3_preferences.sql)
+    "currency_preference",
+    "timezone",
+    "daily_report_enabled",
+    "weekly_report_enabled",
+    "alert_sensitivity",
+    "rate_limit_per_minute",
+    "budget_alert_throttle_mins",
 }
 
 

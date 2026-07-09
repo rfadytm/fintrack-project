@@ -77,10 +77,12 @@ def main_menu():
 
 def continue_keyboard():
     """Ditempel di bawah pesan sukses posting — lanjut input transaksi baru
-    tanpa perlu ketik /menu atau /start dulu."""
+    tanpa perlu ketik /menu atau /start dulu. Juga jalan pintas Saldo/Terakhir
+    (mirip act:cancel di flow batal) biar tidak perlu ketik /saldo /recent."""
     return [
         [tg.btn("💸 Pengeluaran Lagi", "menu:expense"), tg.btn("💰 Pemasukan Lagi", "menu:income")],
         [tg.btn("🔄 Transfer Lagi", "menu:transfer"), tg.btn("📲 Menu", "act:menu")],
+        [tg.btn("💳 Saldo", "act:saldo"), tg.btn("🕒 Terakhir", "act:recent")],
     ]
 
 
@@ -1011,6 +1013,8 @@ def handle_callback(cb):
         return cmd_saldo(chat_id)
     if data == "act:hari":
         return cmd_hari(chat_id)
+    if data == "act:recent":
+        return cmd_recent(chat_id)
     if data == "act:nihil":
         return cmd_nihil(chat_id, user_id)
     if data == "act:scan":

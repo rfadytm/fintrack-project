@@ -212,6 +212,28 @@ def test_act_cancel_offers_quick_shortcuts():
     assert callbacks == ["act:menu", "act:saldo", "act:hari"]
 
 
+def test_continue_keyboard_offers_saldo_and_recent_shortcuts():
+    """UX request: the same quick-shortcut treatment given to act:cancel should
+    also apply after a successful posting (exp_post/inc_post/tr_post all use
+    continue_keyboard()) — add Saldo & Terakhir alongside the existing
+    Pengeluaran/Pemasukan/Transfer Lagi + Menu buttons."""
+    callbacks = [btn["callback_data"] for row in webhook.continue_keyboard() for btn in row]
+    assert "act:saldo" in callbacks
+    assert "act:recent" in callbacks
+
+
+def test_act_recent_callback_lists_recent_transactions():
+    rows = [{"doc_number": "KK-0001", "description": "Makan", "doc_type": "KK", "status": "POSTED"}]
+    table = _mock_table(data=rows)
+    cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "act:recent"}
+    with patch.object(webhook.tg, "answer_callback"), patch.object(
+        webhook, "db", return_value=MagicMock(table=MagicMock(return_value=table))
+    ), patch.object(webhook.tg, "send_message") as send:
+        webhook.handle_callback(cb)
+    send.assert_called_once()
+    assert "transaksi terakhir" in send.call_args[0][1]
+
+
 def test_act_hari_callback_with_no_transactions_offers_menu_and_saldo():
     """Blindspot fix: /hari (and its act:hari button twin) used to call cmd_bulan
     and show a whole MONTH's summary despite claiming "ringkasan hari ini" in

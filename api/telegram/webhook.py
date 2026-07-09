@@ -411,6 +411,55 @@ def cmd_nihil(chat_id, user_id):
     )
 
 
+def cmd_hari(chat_id):
+    """Blindspot fix: /hari dulu memanggil cmd_bulan (ringkasan SEBULAN, salah
+    label) — sekarang ringkasan HARI INI sungguhan: total + daftar transaksi
+    hari ini kalau ada, atau tawarkan jalan pintas Menu/Saldo kalau belum ada
+    transaksi sama sekali (konsisten dengan act:cancel)."""
+    today = today_wib()
+    res = (
+        db().table("transactions")
+        .select(
+            "doc_number, description, doc_type, "
+            "journal_lines(debit_amount, credit_amount, chart_of_accounts(account_type))"
+        )
+        .eq("transaction_date", today.isoformat())
+        .eq("status", "POSTED")
+        .order("created_at")
+        .execute()
+    )
+    rows = res.data or []
+
+    income = expense = 0
+    for t in rows:
+        for l in t.get("journal_lines") or []:
+            acc = l.get("chart_of_accounts") or {}
+            if acc.get("account_type") == "pendapatan":
+                income += (l["credit_amount"] or 0) - (l["debit_amount"] or 0)
+            elif acc.get("account_type") == "beban":
+                expense += (l["debit_amount"] or 0) - (l["credit_amount"] or 0)
+
+    if not rows:
+        kb = [[tg.btn("📲 Menu", "act:menu"), tg.btn("💳 Saldo", "act:saldo")]]
+        return tg.send_message(
+            chat_id,
+            f"🟢 Belum ada transaksi hari ini ({fmt_date(today)}). Yuk catat, atau cek saldo dulu:",
+            keyboard=kb,
+        )
+
+    lines = [
+        f"☀️ <b>Ringkasan {fmt_date(today)}</b>\n",
+        f"💰 Pemasukan: {rupiah(income)}",
+        f"💸 Pengeluaran: {rupiah(expense)}",
+        f"📈 Net: <b>{rupiah(income - expense)}</b>\n",
+        "📋 <b>Transaksi hari ini:</b>",
+    ]
+    for t in rows:
+        amount = sum(l["debit_amount"] or 0 for l in (t.get("journal_lines") or []))
+        lines.append(f"• {t['doc_number']} — {t['description'] or t['doc_type']}: {rupiah(amount)}")
+    tg.send_message(chat_id, "\n".join(lines))
+
+
 def cmd_bulan(chat_id, year, month):
     res = (
         db().rpc("income_statement", {"p_year": year, "p_month": month}).execute()
@@ -961,8 +1010,7 @@ def handle_callback(cb):
     if data == "act:saldo":
         return cmd_saldo(chat_id)
     if data == "act:hari":
-        t = today_wib()
-        return cmd_bulan(chat_id, t.year, t.month)
+        return cmd_hari(chat_id)
     if data == "act:nihil":
         return cmd_nihil(chat_id, user_id)
     if data == "act:scan":
@@ -1274,8 +1322,7 @@ def handle_command(chat_id, user_id, text):
     if cmd == "/nihil":
         return cmd_nihil(chat_id, user_id)
     if cmd == "/hari":
-        t = today_wib()
-        return cmd_bulan(chat_id, t.year, t.month)
+        return cmd_hari(chat_id)
     if cmd == "/bulan":
         t = today_wib()
         if len(parts) > 1 and "-" in parts[1]:

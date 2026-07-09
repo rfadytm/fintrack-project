@@ -212,14 +212,44 @@ def test_act_cancel_offers_quick_shortcuts():
     assert callbacks == ["act:menu", "act:saldo", "act:hari"]
 
 
-def test_act_hari_callback_shows_current_month_summary():
+def test_act_hari_callback_with_no_transactions_offers_menu_and_saldo():
+    """Blindspot fix: /hari (and its act:hari button twin) used to call cmd_bulan
+    and show a whole MONTH's summary despite claiming "ringkasan hari ini" in
+    /help. Now it's a real daily summary — and when today has nothing posted
+    yet, fall back to Menu/Saldo shortcuts instead of an empty report."""
     cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "act:hari"}
+    table = _mock_table(data=[])
     with patch.object(webhook.tg, "answer_callback"), patch.object(
-        webhook, "db", return_value=MagicMock(rpc=MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[])))))
+        webhook, "db", return_value=MagicMock(table=MagicMock(return_value=table))
     ), patch.object(webhook.tg, "send_message") as send:
         webhook.handle_callback(cb)
     send.assert_called_once()
-    assert "📊" in send.call_args[0][1]
+    text, kb = send.call_args[0][1], send.call_args.kwargs.get("keyboard")
+    assert "Belum ada transaksi hari ini" in text
+    callbacks = [btn["callback_data"] for row in kb for btn in row]
+    assert callbacks == ["act:menu", "act:saldo"]
+
+
+def test_hari_command_with_transactions_lists_them_and_totals():
+    rows = [
+        {
+            "doc_number": "KK-2026-07-0001",
+            "description": "Makan siang",
+            "doc_type": "KK",
+            "journal_lines": [
+                {"debit_amount": 50000, "credit_amount": 0, "chart_of_accounts": {"account_type": "beban"}},
+                {"debit_amount": 0, "credit_amount": 50000, "chart_of_accounts": {"account_type": "aset"}},
+            ],
+        }
+    ]
+    table = _mock_table(data=rows)
+    with patch.object(webhook, "db", return_value=MagicMock(table=MagicMock(return_value=table))), patch.object(
+        webhook.tg, "send_message"
+    ) as send:
+        webhook.cmd_hari(chat_id=1)
+    text = send.call_args[0][1]
+    assert "💸 Pengeluaran: Rp 50.000" in text
+    assert "KK-2026-07-0001 — Makan siang: Rp 50.000" in text
 
 
 def test_skip_during_expense_desc_advances_to_source():

@@ -2801,3 +2801,14 @@ journal_lines yang transaction_date-nya hari ini, lalu:
 Testing: 1 test lama (act:hari, masih ber-asumsi perilaku bulanan lama)
 diganti 2 test baru — kasus tidak ada transaksi (fallback Menu/Saldo) dan
 kasus ada transaksi (total + list muncul benar). Total pytest 73 → 74.
+
+9.11 Jalan pintas Saldo/Terakhir setelah posting sukses (2026-07-09)
+Pola jalan pintas yang sama di 9.9 (act:cancel) sekarang diterapkan juga ke
+continue_keyboard() — keyboard yang muncul di bawah pesan sukses tiap posting
+(exp_post/inc_post/tr_post, semua pakai fungsi yang sama). Ditambah baris
+ke-3: 💳 Saldo (act:saldo, sudah ada) dan 🕒 Terakhir (act:recent, callback
+BARU -> cmd_recent) — sekarang abis posting bisa langsung cek saldo terbaru
+atau daftar transaksi terakhir tanpa ketik /saldo atau /recent.
+
+Testing: 2 test baru — continue_keyboard() memuat act:saldo & act:recent,
+dan act:recent memicu cmd_recent dengan benar. Total pytest 74 → 76.

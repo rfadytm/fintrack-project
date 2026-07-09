@@ -2762,3 +2762,26 @@ pindah bulan sesuai puncak bulan itu. TimelineChart.tsx tinggal pasang
 Testing: src/utils/niceScale.test.ts (kasus dari contoh user + edge case
 nol/negatif/NaN/nilai kecil). Verifikasi: 42 Vitest (+6 baru), tsc bersih,
 build sukses, 14 Playwright e2e tetap hijau.
+
+9.9 Jalan pintas di pesan "Dibatalkan" bot Telegram (2026-07-09)
+UX request: setelah membatalkan input (tombol ✖️ Batal di alur pengeluaran/
+pemasukan/transfer/undo, semua pakai callback act:cancel), user harus ketik
+/menu lagi buat lanjut — dirasa kurang praktis. Sekarang api/telegram/
+webhook.py's act:cancel handler mengedit pesan jadi "❌ Dibatalkan. Mau lanjut
+ke mana nih?" plus 3 tombol jalan pintas: Menu, Saldo, Hari Ini (act:hari,
+callback baru — logic-nya sama persis dengan command /hari yang sudah ada,
+cuma dibikin bisa diakses lewat tombol juga).
+
+Catatan tersendiri (BUKAN bagian dari request ini, ditemukan sambil lihat
+kode /hari): command /hari mengklaim "ringkasan hari ini" di /help, tapi
+implementasinya (cmd_bulan dipanggil dengan year/month hari ini) sebenarnya
+menampilkan ringkasan SEBULAN PENUH (judul "📊 Juli 2026", bukan ringkasan
+1 hari) — beda dari cron job=daily yang punya perhitungan harian sungguhan
+(_send_daily_summary di api/cron/index.py). act:hari yang baru sengaja
+DIBUAT SAMA dengan /hari yang sudah ada (konsisten), bukan diperbaiki,
+supaya tidak diam-diam mengubah perilaku yang mungkin sudah biasa dipakai
+user — tunggu konfirmasi dulu sebelum diperbaiki jadi ringkasan 1 hari
+sungguhan.
+
+Testing: 2 test baru di tests/test_webhook_flows.py (tombol act:cancel persis
+Menu/Saldo/Hari Ini, act:hari mengembalikan ringkasan). Total pytest 71 → 73.

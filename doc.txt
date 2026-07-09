@@ -2679,3 +2679,65 @@ EXPENSE_DESC benar-benar advance state, /skip di luar state itu tetap fallback
 seperti biasa, command lain selain /skip tetap bisa interupsi wizard yang
 sedang jalan — regression guard biar fix ini tidak merusak perilaku command
 lain). Total pytest 66 → 71, semua hijau.
+
+9.7 Review keamanan (cybersecurity pass) (2026-07-09)
+Bukan simulasi fungsional — review khusus permukaan keamanan: auth/session,
+RLS/hak akses DB, CORS, penanganan secrets, CVE dependency, permukaan XSS,
+SSRF/DoS di endpoint OCR. Ditemukan 4 hal, 2 sudah diperbaiki, 2 didiskusikan
+dan sengaja DIBIARKAN atas keputusan user.
+
+Diperbaiki:
+1. Race condition (TOCTOU) di magic-link login (api/auth/verify.py): cek
+   is_used=false dan tandai is_used=true sebelumnya 2 langkah terpisah
+   (SELECT lalu UPDATE) — dua request nyaris bersamaan dengan token yang sama
+   (single-use, dari /getlink) bisa lolos SELECT sebelum salah satunya sempat
+   UPDATE, menghasilkan 2 sesi dari 1 token yang seharusnya cuma bisa dipakai
+   sekali. Fix: digabung jadi SATU UPDATE ... WHERE is_used=false — Postgres
+   row-lock otomatis cuma meloloskan satu request, request kedua tidak match
+   baris apa pun. Eksploitasi butuh penyerang sudah pegang token itu duluan
+   (HMAC-signed, sekali pakai, kadaluarsa dalam hitungan menit) jadi risiko
+   praktis rendah, tapi tetap bug TOCTOU nyata dan gampang diperbaiki.
+2. api/receipts/parse.py (endpoint OCR struk) menerima body image_base64 dan
+   men-decode SELURUH payload sebelum ada pengecekan ukuran — satu-satunya
+   guard ukuran (ocr.MAX_BYTES) ada di shared/ocr.py, SETELAH decode. Endpoint
+   ini sudah butuh auth (cookie sesi atau X-API-Key) jadi bukan celah publik,
+   tapi tetap ditambah penolakan dini kalau base64-nya jauh melebihi batas —
+   jaga-jaga dari pemborosan resource/kuota OCR.space gratis.
+3. CRON_SECRET didokumentasikan di .env.example (sebelumnya sudah dipakai
+   nyata oleh api/cron/* sejak v3, tapi tidak pernah ditulis di file contoh
+   env — celah dokumentasi, bukan celah keamanan).
+
+Ditemukan tapi SENGAJA dibiarkan (keputusan user, bukan lupa):
+4. Webhook Telegram (api/telegram/webhook.py do_POST) fail-open kalau
+   WEBHOOK_SECRET belum di-set — cek signature dilewati dan endpoint menerima
+   POST dari siapa saja, termasuk berpotensi spoof from.id supaya lolos
+   whitelist OWNER_TELEGRAM_ID. User mengonfirmasi WEBHOOK_SECRET sudah
+   di-set di Vercel, jadi ini bukan celah aktif — dibiarkan fail-open (bukan
+   diubah ke fail-closed) karena WEBHOOK_SECRET memang env var opsional by
+   design ("aman saat rollout" awal), dan ide hardening ke fail-closed
+   sengaja tidak dieksekusi supaya tidak berisiko mengunci bot sendiri kalau
+   env var itu suatu saat hilang tanpa sengaja.
+5. Package xlsx@0.18.5 (dipakai untuk export .xlsx di src/utils/exportXlsx.ts)
+   punya 2 CVE publik (prototype pollution, ReDoS) yang cuma dipatch di
+   versi 0.19.3+ — versi itu sudah tidak dipublish ke npm registry (SheetJS
+   pindah distribusi patch ke CDN resminya sendiri). Dicek: app ini CUMA
+   pernah panggil XLSX.utils.json_to_sheet/book_new/writeFile (tulis), TIDAK
+   PERNAH XLSX.read/readFile (baca) — jalur kode yang rentan (parsing file
+   asing) tidak pernah dieksekusi sama sekali di app ini. User memilih tetap
+   di versi npm biasa (bukan pindah ke sumber dependency non-npm CDN SheetJS)
+   karena risiko nyata sudah mendekati nol dan instalasi npm standar lebih
+   diutamakan; catatan ini disimpan supaya diingat kalau nanti ada fitur
+   IMPORT spreadsheet — saat itu risikonya jadi relevan dan perlu dicek ulang.
+
+Tidak jadi masalah (dicek, aman): db/08_security.sql sudah RLS ON di semua
+tabel v1 + REVOKE EXECUTE function dari anon/authenticated + security_invoker
+di view + ALTER DEFAULT PRIVILEGES (tabel baru pun tidak otomatis kebuka) —
+semua tabel v3 (12-17_*.sql) juga sudah RLS ON konsisten. Session cookie
+HttpOnly+Secure+SameSite=Strict (CSRF sudah termitigasi). Tidak ada secret
+ter-commit ke git (.env di .gitignore, dicek git history bersih). Tidak ada
+pemakaian anon/service key di frontend. Tidak ada dangerouslySetInnerHTML/
+innerHTML/eval di frontend (permukaan XSS bersih). Tidak ada token/sesi
+disimpan di localStorage/sessionStorage (murni httpOnly cookie).
+
+Verifikasi: 71 pytest tetap hijau, py_compile bersih. Tidak ada perubahan
+frontend di batch ini.

@@ -84,7 +84,12 @@ def _execute_recurring(db, today):
     for r in due.data:
         try:
             doc = journal.post(r["doc_type"], today, r.get("description"), r["lines"], source="system")
-            next_run = advance_next_run(today, r["frequency"])
+            # Blindspot fix: majukan dari next_run YANG TERJADWAL, bukan dari `today`.
+            # Kalau cron sempat telat (GitHub Actions scheduled workflow bisa molor
+            # sampai lewat tengah malam saat load tinggi), pakai `today` di sini
+            # menggeser jangkar tanggal/hari recurring maju permanen tiap kali telat
+            # (mis. langganan bulanan tgl 5 jadi tgl 6 dst kalau cron telat sehari).
+            next_run = advance_next_run(_date.fromisoformat(r["next_run"]), r["frequency"])
             db.table("recurring_transactions").update({"next_run": next_run.isoformat()}).eq("id", r["id"]).execute()
             if OWNER_ID:
                 tg.send_message(OWNER_ID, f"🔁 Recurring \"{r['description']}\" ter-posting otomatis: {doc}.")

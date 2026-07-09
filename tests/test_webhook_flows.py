@@ -191,3 +191,53 @@ def test_act_menu_callback_sends_main_menu():
         webhook.handle_callback(cb)
     send.assert_called_once()
     assert send.call_args.kwargs.get("keyboard") == webhook.main_menu()
+
+
+def test_skip_during_expense_desc_advances_to_source():
+    """Blindspot fix: "/skip" while filling in EXPENSE_DESC used to be intercepted
+    by the generic command router (text.startswith("/")) before it ever reached
+    the state machine, so it always replied "Tidak ada yang di-skip." and never
+    actually advanced past the description step — contradicting the prompt's own
+    "(atau /skip)" hint."""
+    fs = FakeState()
+    fs.set(1, "EXPENSE_DESC", {"account_code": "5130", "amount": 25000})
+    cash_table = _mock_table(data=[{"code": "1120", "account_name": "Kas Kecil"}])
+    sent = []
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(webhook, "db", return_value=MagicMock(table=MagicMock(return_value=cash_table))), patch.object(
+        webhook.tg, "send_message", side_effect=lambda cid, text, **kw: sent.append(text)
+    ):
+        webhook.handle_text(chat_id=1, user_id=1, text="/skip")
+    assert fs.state == "EXPENSE_SOURCE"
+    assert fs.data["desc"] is None
+    assert sent == ["🏦 Bayar dari akun mana?"]
+
+
+def test_skip_outside_desc_state_falls_back_to_generic_command():
+    """"/skip" typed with nothing to skip (IDLE or any other state) should still
+    hit the ordinary command router and get the fallback message, not silently
+    no-op or crash."""
+    fs = FakeState()  # IDLE by default
+    sent = []
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(webhook.tg, "send_message", side_effect=lambda cid, text, **kw: sent.append(text)):
+        webhook.handle_text(chat_id=1, user_id=1, text="/skip")
+    assert sent == ["Tidak ada yang di-skip."]
+
+
+def test_other_commands_still_interrupt_wizards():
+    """Regression guard for the /skip routing fix: every other slash command must
+    still short-circuit straight to handle_command even while a wizard is active."""
+    fs = FakeState()
+    fs.set(1, "EXPENSE_DESC", {"account_code": "5130", "amount": 25000})
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(webhook, "reset_state", side_effect=fs.reset), patch.object(
+        webhook.tg, "send_message"
+    ) as send:
+        webhook.handle_text(chat_id=1, user_id=1, text="/reset")
+    assert fs.state == "IDLE"
+    send.assert_called_once()
+    assert send.call_args.kwargs.get("keyboard") == webhook.main_menu()

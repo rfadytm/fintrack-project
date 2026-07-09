@@ -1180,12 +1180,19 @@ def show_detail(chat_id, doc):
 def handle_text(chat_id, user_id, text):
     text = text.strip()
 
-    if text.startswith("/"):
-        return handle_command(chat_id, user_id, text)
-
     st = get_state(user_id)
     state = st["state"]
     d = st["state_data"]
+
+    # Blindspot fix: /skip waktu ngisi keterangan HARUS ditangani state machine di
+    # bawah (skip keterangan), bukan di-intercept command-router generik seperti
+    # command lain — sebelumnya "/skip" selalu ditangkap duluan oleh
+    # text.startswith("/") dan berakhir di handle_command's "/skip" fallback
+    # ("Tidak ada yang di-skip."), jadi /skip TIDAK PERNAH benar-benar melewati
+    # keterangan walau pesan bantuan menjanjikannya.
+    skipping_desc = text == "/skip" and state in ("EXPENSE_DESC", "INCOME_DESC")
+    if text.startswith("/") and not skipping_desc:
+        return handle_command(chat_id, user_id, text)
 
     if state.startswith("SETUP_"):
         return handle_setup_input(chat_id, user_id, state, text)
@@ -1285,7 +1292,7 @@ def handle_command(chat_id, user_id, text):
         reset_state(user_id)
         return tg.send_message(chat_id, "🔄 Direset.", keyboard=main_menu())
     if cmd == "/skip":
-        return handle_text(chat_id, user_id, "/skip") if False else tg.send_message(chat_id, "Tidak ada yang di-skip.")
+        return tg.send_message(chat_id, "Tidak ada yang di-skip.")
 
     # v3 commands
     if cmd == "/undo":

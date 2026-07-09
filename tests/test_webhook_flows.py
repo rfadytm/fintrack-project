@@ -193,6 +193,35 @@ def test_act_menu_callback_sends_main_menu():
     assert send.call_args.kwargs.get("keyboard") == webhook.main_menu()
 
 
+def test_act_cancel_offers_quick_shortcuts():
+    """UX request: instead of making the user type /menu again after cancelling
+    an in-progress input, offer one-tap shortcuts straight below "Dibatalkan"."""
+    fs = FakeState()
+    fs.set(1, "EXPENSE_AMOUNT", {"account_code": "5130"})
+    cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "act:cancel"}
+    with patch.object(webhook, "reset_state", side_effect=fs.reset), patch.object(
+        webhook.tg, "answer_callback"
+    ), patch.object(webhook.tg, "edit_message") as edit:
+        webhook.handle_callback(cb)
+    assert fs.state == "IDLE"
+    edit.assert_called_once()
+    text = edit.call_args.args[2] if len(edit.call_args.args) > 2 else edit.call_args.kwargs.get("text")
+    assert "Dibatalkan" in text
+    kb = edit.call_args.kwargs.get("keyboard")
+    callbacks = [btn["callback_data"] for row in kb for btn in row]
+    assert callbacks == ["act:menu", "act:saldo", "act:hari"]
+
+
+def test_act_hari_callback_shows_current_month_summary():
+    cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "act:hari"}
+    with patch.object(webhook.tg, "answer_callback"), patch.object(
+        webhook, "db", return_value=MagicMock(rpc=MagicMock(return_value=MagicMock(execute=MagicMock(return_value=MagicMock(data=[])))))
+    ), patch.object(webhook.tg, "send_message") as send:
+        webhook.handle_callback(cb)
+    send.assert_called_once()
+    assert "📊" in send.call_args[0][1]
+
+
 def test_skip_during_expense_desc_advances_to_source():
     """Blindspot fix: "/skip" while filling in EXPENSE_DESC used to be intercepted
     by the generic command router (text.startswith("/")) before it ever reached

@@ -954,9 +954,15 @@ def handle_callback(cb):
 
     if data == "act:cancel":
         reset_state(user_id)
-        return tg.edit_message(chat_id, mid, "❌ Dibatalkan.")
+        # UX request: daripada user harus ketik /menu lagi, tempelkan langsung
+        # jalan pintas paling sering dipakai di bawah pesan batal.
+        kb = [[tg.btn("📲 Menu", "act:menu"), tg.btn("💳 Saldo", "act:saldo"), tg.btn("📅 Hari Ini", "act:hari")]]
+        return tg.edit_message(chat_id, mid, "❌ Dibatalkan. Mau lanjut ke mana nih?", keyboard=kb)
     if data == "act:saldo":
         return cmd_saldo(chat_id)
+    if data == "act:hari":
+        t = today_wib()
+        return cmd_bulan(chat_id, t.year, t.month)
     if data == "act:nihil":
         return cmd_nihil(chat_id, user_id)
     if data == "act:scan":

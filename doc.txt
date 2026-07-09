@@ -2741,3 +2741,24 @@ disimpan di localStorage/sessionStorage (murni httpOnly cookie).
 
 Verifikasi: 71 pytest tetap hijau, py_compile bersih. Tidak ada perubahan
 frontend di batch ini.
+
+9.8 Batas atas grafik "Akumulasi Pengeluaran Harian" dinamis (2026-07-09)
+User minta batas atas (Y-axis max) grafik dashboard tidak mepet ke nilai
+aktual, tapi selalu ada ruang lega di atas puncak pengeluaran kumulatif bulan
+itu — dan batasnya ikut naik kalau ada lonjakan (mis. puncak tembus 3 juta,
+batas atas harus tetap di atasnya, bukan skala tetap). Sebelumnya
+src/components/TimelineChart.tsx pakai auto-scale bawaan Recharts yang mepet
+ke nilai maksimum data, tanpa ruang lega.
+
+Ditambahkan src/utils/niceScale.ts (niceCeiling()): hitung batas atas dari
+puncak NYATA data yang ditampilkan, dibulatkan ke atas pakai deret "angka
+bulat" 1/2/2.5/5/10 (skala umum dipakai chart library) dikali kelipatan 10 —
+jadi 800rb → 1jt, 600rb → 1jt, 3jt → 5jt, selalu strictly di atas nilai
+aslinya (tidak pernah pas sama). Dihitung ulang tiap render dari `data` yang
+sedang ditampilkan (bukan hardcode), jadi otomatis menyesuaikan tiap
+pindah bulan sesuai puncak bulan itu. TimelineChart.tsx tinggal pasang
+`domain={[0, ceiling]}` di <YAxis>.
+
+Testing: src/utils/niceScale.test.ts (kasus dari contoh user + edge case
+nol/negatif/NaN/nilai kecil). Verifikasi: 42 Vitest (+6 baru), tsc bersih,
+build sukses, 14 Playwright e2e tetap hijau.

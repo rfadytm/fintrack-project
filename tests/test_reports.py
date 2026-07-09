@@ -118,6 +118,25 @@ def test_report_ledger_running_balance_credit_normal_account():
     assert [r["running_balance"] for r in body["lines"]] == [200, 150]
 
 
+def test_report_ledger_selects_account_code():
+    """Blindspot fix: the select() list omitted account_code entirely, so every
+    /api/reports?report=ledger response was missing that field. The frontend's
+    JournalLineSchema requires account_code (non-optional) — its absence made
+    Zod reject EVERY ledger response, surfacing as "Data dari server tidak
+    sesuai format yang diharapkan" on the Buku Besar page for every account."""
+    client = MagicMock()
+    coa_table = _mock_table(data=[{"normal_balance": "debit"}])
+    lines_table = _mock_table(data=[], count=0)
+
+    def table_router(name):
+        return coa_table if name == "chart_of_accounts" else lines_table
+
+    client.table.side_effect = table_router
+    reports_index._report_ledger(client, {"account": "1110"})
+    select_arg = lines_table.select.call_args[0][0]
+    assert "account_code" in select_arg
+
+
 def test_opening_balance_none_when_no_ob_this_period():
     client = MagicMock()
     client.table.return_value = _mock_table(data=[])

@@ -93,7 +93,7 @@ def _report_ledger(db, q):
     query = (
         db.table("journal_lines")
         .select(
-            "id, line_order, debit_amount, credit_amount, "
+            "id, line_order, account_code, debit_amount, credit_amount, "
             "transactions!inner(doc_number, transaction_date, description, status, period_year, period_month)",
             count="exact",
         )

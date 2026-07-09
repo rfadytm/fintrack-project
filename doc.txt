@@ -1633,3 +1633,54 @@ dikenal, cuma kurang argumen. Fix: sekarang masing-masing balas pesan
 Testing: 4 test baru (test_lock_without_args_shows_usage_not_unknown_command,
 test_lock_with_valid_args_still_locks_period, dan pasangannya untuk
 /reverse). Total pytest 76 → 80.
+
+9.13 Bug Buku Besar, cell Pendapatan hilang di export, forecast diperbaiki (2026-07-09)
+User laporkan 3 hal spesifik + minta audit blindspot serupa.
+
+1. Buku Besar (Ledger) — "Data dari server tidak sesuai format yang
+   diharapkan": root cause ketemu di api/reports/index.py's _report_ledger —
+   select() list-nya TIDAK menyertakan account_code, padahal
+   JournalLineSchema di frontend (src/types/api.ts) mewajibkan account_code
+   (bukan optional). Akibatnya SETIAP respons ?report=ledger gagal validasi
+   Zod, dan halaman Buku Besar SELALU menampilkan pesan generic
+   "Data dari server tidak sesuai format yang diharapkan" alih-alih data
+   sungguhan — persis pesan yang dilaporkan user. Fix: tambahkan account_code
+   ke select(). Diaudit juga semua endpoint lain (accounts, transactions,
+   balance, monthly, trial-balance, income-statement, range, forecast,
+   budgets, goals, recurring, bills, tags, settings, auth/me) terhadap skema
+   Zod masing-masing — tidak ada mismatch lain, Ledger satu-satunya yang pakai
+   select() list manual dan kelewatan satu kolom (endpoint lain pakai
+   select("*") atau RPC dengan kontrak kolom tetap, jauh lebih aman dari jenis
+   bug ini).
+2. Export Laba Rugi ke Excel tidak ada baris Pendapatan: exportIS() di
+   src/pages/Reports.tsx dump baris per-akun revenue/expense tanpa baris
+   subtotal — kalau bulan itu tidak ada akun pendapatan dengan transaksi
+   (mis. cuma modal awal yang sengaja dikecualikan, lihat §9.5), array
+   revenue-nya kosong dan Excel-nya loncat langsung dari judul ke baris
+   Beban, tampak seperti "Pendapatan hilang total". Fix: selalu tambahkan
+   baris "Total Pendapatan" & "Total Beban" (walau 0), sama seperti yang
+   ditampilkan di layar (komponen Section). Blindspot yang sama ditemukan &
+   diperbaiki juga di export Trial Balance (baris TOTAL/Balance hilang dari
+   Excel walau ditampilkan di layar).
+3. Forecast (shared/forecast.py, dipakai ?report=forecast): linear_forecast
+   sebelumnya regresi OLS polos — menarik satu garis lurus lewat SEMUA titik
+   berbobot sama, gampang terdistorsi jauh oleh satu bulan pengeluaran besar
+   tak-berulang (mis. beli laptop sekali) dan bisa mengekstrapolasi ke angka
+   negatif untuk tren menurun tajam (nominal uang tidak masuk akal negatif).
+   Diganti Holt's linear trend exponential smoothing (level+tren, observasi
+   baru dapat bobot lebih besar — teknik forecasting deret waktu pendek yang
+   standar & lebih tahan noise dibanding OLS untuk data sesedikit ini),
+   dikombinasikan dengan winsorizing sebelum smoothing (redam titik ekstrem
+   ke ±threshold*stdev, bukan dihapus) supaya satu bulan anomali tidak
+   membengkokkan tren jangka panjang. Winsorizing sengaja pakai z-score
+   "leave-one-out" (rata-rata & stdev dihitung dari titik-titik LAIN, bukan
+   termasuk titik yang diuji) — z-score biasa gagal total di sini karena
+   classic "masking effect": satu outlier ekstrem menggelembungkan stdev-nya
+   sendiri sampai z-score-nya mentok di sekitar sqrt(n-1) tidak peduli
+   seberapa besar nilainya, jadi tidak pernah lewat threshold berapa pun.
+   Hasil forecast di-floor ke 0 (tidak pernah negatif).
+
+Testing: tests/test_reports.py +1 (select ledger menyertakan account_code),
+tests/test_forecast.py +5 (redam outlier tunggal, tidak pernah negatif,
+_winsorize menahan titik normal tapi meredam outlier, regression guard
+khusus untuk masking effect). Total pytest 80 → 86. tsc bersih.

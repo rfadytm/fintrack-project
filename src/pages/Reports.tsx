@@ -156,8 +156,16 @@ function IncomeStatement({ year, month }: { year: number; month: number }) {
       `fintrack_labarugi_${year}-${String(month).padStart(2, "0")}.xlsx`,
       "Laba Rugi",
       [
+        // Blindspot fix: export dulu cuma dump baris per-akun tanpa subtotal —
+        // kalau d.revenue kosong (mis. bulan tanpa pendapatan sungguhan, hanya
+        // modal awal yang sengaja dikecualikan dari Laba Rugi), Excel-nya jadi
+        // sama sekali tidak punya baris "Pendapatan", langsung loncat ke Beban.
+        // Sekarang selalu ada baris Total Pendapatan/Total Beban, sama seperti
+        // yang ditampilkan di layar (komponen Section di bawah).
         ...(d.revenue || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Pendapatan", Jumlah: r.amount })),
+        { Kode: "", Akun: "Total Pendapatan", Tipe: "Pendapatan", Jumlah: d.total_revenue || 0 },
         ...(d.expense || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Beban", Jumlah: r.amount })),
+        { Kode: "", Akun: "Total Beban", Tipe: "Beban", Jumlah: d.total_expense || 0 },
         { Kode: "", Akun: "NET LABA/RUGI", Tipe: "", Jumlah: d.net_income || 0 },
       ]
     );
@@ -224,12 +232,23 @@ function TrialBalance({ year, month }: { year: number; month: number }) {
     exportRows(
       `fintrack_trialbalance_${year}-${String(month).padStart(2, "0")}.xlsx`,
       "Trial Balance",
-      (d.accounts || []).map((r) => ({
-        Kode: r.code,
-        Akun: r.account_name,
-        Debit: r.total_debit || 0,
-        Kredit: r.total_credit || 0,
-      }))
+      [
+        ...(d.accounts || []).map((r) => ({
+          Kode: r.code,
+          Akun: r.account_name,
+          Debit: r.total_debit || 0,
+          Kredit: r.total_credit || 0,
+        })),
+        // Blindspot fix (sama pola dengan Laba Rugi): export dulu cuma dump
+        // baris per-akun tanpa baris TOTAL yang ditampilkan di layar — jadi
+        // tidak ada cara verifikasi debit=kredit dari file Excel-nya sendiri.
+        {
+          Kode: "",
+          Akun: d.balanced ? "TOTAL (Balance)" : "TOTAL (Tidak Balance)",
+          Debit: d.total_debit || 0,
+          Kredit: d.total_credit || 0,
+        },
+      ]
     );
 
   return (

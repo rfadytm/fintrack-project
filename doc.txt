@@ -88,115 +88,183 @@ Imprest Method
 SeaBank = kas kecil, target Rp 500.000, isi otomatis hitung selisih ke target
 Normal Balance
 Aset & Beban = Debit normal. Liabilitas, Ekuitas, Pendapatan = Kredit normal
-2. FOLDER STRUCTURE
-Semua kode dalam satu GitHub repo. Vercel auto-detect folder api/ sebagai serverless functions Python dan build React dari package.json.
-fintrack/                          ← Root project (GitHub repo)
-├── api/                           ← Vercel serverless Python functions
-│   ├── telegram/
-│   │   └── webhook.py             → POST /api/telegram/webhook
-│   ├── transactions/
-│   │   └── index.py               → GET /api/transactions?period=&type=&account=
-│   ├── reports/
-│   │   ├── monthly.py             → GET /api/reports/monthly?year=&month=
-│   │   ├── balance.py             → GET /api/reports/balance
-│   │   ├── ledger.py              → GET /api/reports/ledger?account=&year=&month=
-│   │   ├── trial_balance.py       → GET /api/reports/trial-balance?year=&month=
-│   │   └── income_statement.py    → GET /api/reports/income-statement?year=&month=
-│   ├── accounts/
-│   │   └── index.py               → GET /api/accounts (COA list)
+2. FOLDER STRUCTURE (diperbarui 2026-07-09 — v1 asli di bawah ini sudah jauh
+ketinggalan; ini struktur SEBENARNYA setelah v2 OCR+API layer, migrasi
+frontend ke TypeScript, dan batch v3 budget/goals/recurring/bills/tags/
+forecast/cron. Lihat §9 untuk histori perubahan lengkapnya.)
+Semua kode dalam satu GitHub repo. Vercel auto-detect folder api/ sebagai
+serverless functions Python — PERSIS 12 file (batas Hobby plan, lihat
+blindspot di §9.4 — endpoint baru WAJIB digabung ke function yang sudah ada
+lewat query-param dispatch, bukan file baru) — dan build React (Vite+TS)
+dari package.json.
+
+fintrack/                              ← Root project (GitHub repo)
+├── api/                               ← Vercel serverless Python (12 function pas)
+│   ├── telegram/webhook.py            → POST /api/telegram/webhook — bot utama: command,
+│   │                                      wizard (budget/goal/recurring/bill/tag/kategori/
+│   │                                      convert/nabung), callback, OCR struk, rate limit,
+│   │                                      anti-abuse, budget alert
+│   ├── transactions/index.py          → GET (list+filter tag/tipe/periode) & POST (posting
+│   │                                      integrasi, dashboard atau X-API-Key) /api/transactions
+│   ├── reports/index.py               → GET /api/reports?report=balance|monthly|ledger|
+│   │                                      trial-balance|income-statement|range|forecast
+│   │                                      (7 laporan lama digabung 1 function biar muat 12)
+│   ├── accounts/index.py              → GET /api/accounts (COA) + POST (kategori beban custom)
+│   ├── budgets/index.py               → GET/POST/DELETE /api/budgets?resource=budget|goal
+│   ├── recurring/index.py             → GET/POST/DELETE /api/recurring?resource=recurring|bill
+│   ├── tags/index.py                  → GET/POST/DELETE /api/tags (+?action=assign)
+│   ├── settings/index.py              → GET/POST /api/settings (bot_settings, whitelist EDITABLE)
+│   ├── receipts/parse.py              → POST /api/receipts/parse (OCR struk/nota → field transaksi
+│   │                                      siap posting, belum di-POST)
+│   ├── cron/index.py                  → GET /api/cron?job=daily|weekly|monthly|annual|
+│   │                                      housekeeping — dipanggil GitHub Actions,
+│   │                                      auth header X-Cron-Secret
 │   └── auth/
-│       ├── verify.py              → POST /api/auth/verify (token → session cookie)
-│       └── me.py                  → GET /api/auth/me (cek session aktif)
+│       ├── verify.py                  → POST /api/auth/verify — token magic-link → session
+│       │                                  cookie (single-use, atomic UPDATE anti race condition)
+│       └── me.py                      → GET (cek session) / POST (logout) /api/auth/me
 │
-├── src/                           ← React/Vite frontend source
+├── shared/                            ← Python utilities dipakai lintas api/ — TIDAK dihitung
+│                                          ke limit 12 function (cuma file langsung di api/ yang dihitung)
+│   ├── db.py                          → Supabase client singleton (service_role, port 6543 PgBouncer)
+│   ├── auth.py                        → HMAC session cookie + magic-link token + API key/cron secret,
+│   │                                      semua compare pakai hmac.compare_digest (timing-safe)
+│   ├── http.py                        → Helper BaseHTTPRequestHandler (send_json, require_session/
+│   │                                      require_auth/require_cron, paginate)
+│   ├── journal.py                     → post() — satu-satunya entrypoint posting tervalidasi,
+│   │                                      dipakai API layer & recurring cron
+│   ├── doc_number.py                  → Auto-generate nomor dokumen (KK-2026-07-001)
+│   ├── validator.py                   → Parsing nominal teks: 25k→25000, 2jt→2000000
+│   ├── period.py                      → Cek period lock sebelum POST
+│   ├── format.py                      → Format Rupiah, tanggal WIB, nama bulan
+│   ├── telegram.py                    → Telegram Bot API client (raw httpx, B7: tanpa
+│   │                                      python-telegram-bot supaya cold-start cepat)
+│   ├── ocr.py                         → Client OCR.space (ekstrak teks dari foto struk, gratis)
+│   ├── receipt_parser.py              → Parse teks OCR (regex) → {merchant, amount, date, confidence}
+│   ├── fx.py                          → Konversi mata uang via frankfurter.app (gratis, tanpa API key)
+│   ├── forecast.py                    → Z-score anomali + regresi linear (stdlib murni, B7: tanpa numpy)
+│   ├── activity.py                    → Rate limiting + anti-abuse + activity log (tabel activity_log)
+│   ├── scheduling.py                  → Helper tanggal recurring/bill — murni, testable tanpa DB
+│   ├── sparkline.py                   → ASCII sparkline (▁▂▃…█) buat laporan Telegram
+│   ├── retry.py                       → Retry+backoff generik (dipakai shared/ocr.py)
+│   ├── reports.py                     → month_totals() — agregasi income/expense bulan berjalan,
+│   │                                      dipakai bareng oleh reports+cron+bot biar tidak triplikasi
+│   └── state.py                       → bot_state (state machine wizard, auto-timeout 30 menit)
+│
+├── src/                                ← React 18 + Vite + TypeScript + Tailwind v4 + shadcn-style UI
 │   ├── pages/
-│   │   ├── Dashboard.jsx          → Ringkasan keuangan utama
-│   │   ├── Journal.jsx            → Daftar semua jurnal entry
-│   │   ├── Ledger.jsx             → Buku besar per akun
-│   │   ├── Reports.jsx            → Neraca, Laba Rugi, Trial Balance
-│   │   ├── COA.jsx                → Chart of Accounts & saldo per akun
-│   │   ├── Settings.jsx           → Pengaturan (alias, default akun)
-│   │   └── Login.jsx              → Halaman login (instruksi /getlink)
+│   │   ├── Dashboard.tsx              → Saldo kas, Pemasukan/Pengeluaran/Net/Savings Rate
+│   │   │                                  (angka animasi count-up), catatan saldo awal /setup,
+│   │   │                                  grafik beban per kategori, grafik akumulasi harian
+│   │   │                                  (Y-axis dinamis) + daftar pembelian besar, transaksi terakhir
+│   │   ├── Journal.tsx                → Daftar jurnal + filter tipe/tag + export CSV/JSON/PDF/Excel
+│   │   ├── Ledger.tsx                 → Buku besar per akun (running balance, sadar normal_balance)
+│   │   ├── Reports.tsx                → Laba Rugi, Trial Balance, rentang tanggal bebas, forecast
+│   │   ├── COA.tsx                    → Chart of Accounts + form tambah kategori beban custom
+│   │   ├── Budgets.tsx                → CRUD budget kategori + progress bar
+│   │   ├── Goals.tsx                  → CRUD target tabungan + progress bar
+│   │   ├── Recurring.tsx              → CRUD transaksi berulang
+│   │   ├── Bills.tsx                  → CRUD tagihan
+│   │   ├── Settings.tsx               → Default akun, preferensi v3, kelola tag, logout (konfirmasi)
+│   │   ├── Login.tsx                  → Instruksi /getlink
+│   │   └── AuthCallback.tsx           → /auth?t=TOKEN → tukar token jadi session cookie
 │   ├── components/
-│   │   ├── Navbar.jsx             → Navigasi utama
-│   │   ├── BalanceCard.jsx        → Card saldo per akun bank
-│   │   ├── TransactionTable.jsx   → Tabel transaksi reusable
-│   │   ├── CategoryChart.jsx      → Pie/bar chart per kategori beban
-│   │   ├── TimelineChart.jsx      → Line chart akumulasi harian
-│   │   └── ProtectedRoute.jsx     → Route guard (redirect ke login jika no session)
-│   ├── hooks/
-│   │   ├── useAuth.js             → Auth state management
-│   │   ├── useTransactions.js     → Fetch + cache transaksi
-│   │   └── useReports.js          → Fetch data laporan keuangan
+│   │   ├── Navbar.tsx                 → Navigasi 10 halaman
+│   │   ├── AppBackground.tsx          → Background glassmorphic (blob warna blur)
+│   │   ├── BalanceCard.tsx            → Card saldo per akun (angka animasi)
+│   │   ├── TransactionTable.tsx       → Tabel transaksi reusable
+│   │   ├── CategoryChart.tsx          → Chart beban per kategori
+│   │   ├── TimelineChart.tsx          → Grafik akumulasi harian (domain Y-axis dari niceScale.ts)
+│   │   ├── ErrorBoundary.tsx          → Tangkap render error (bukan layar putih)
+│   │   ├── ProtectedRoute.tsx         → Route guard (redirect /login kalau no session)
+│   │   └── ui/                        → Kit ala shadcn/ui (Radix+CVA): button, card, dialog,
+│   │                                      input, label, select, skeleton, table, tabs, badge,
+│   │                                      animated-number.tsx (count-up angka, respect
+│   │                                      prefers-reduced-motion)
+│   ├── hooks/                         → useAuth/useTransactions/useReports (React Query)
 │   ├── utils/
-│   │   ├── api.js                 → Semua fetch() calls ke Vercel API endpoints
-│   │   ├── formatRupiah.js        → Format angka ke IDR (Rp 1.234.567)
-│   │   └── dateHelpers.js         → Helper tanggal, periode, format WIB
-│   ├── context/
-│   │   └── AppContext.jsx         → Global state (periode aktif, user info)
-│   ├── App.jsx                    → Root komponen + React Router setup
-│   └── main.jsx                   → Vite entry point
+│   │   ├── api.ts                     → Semua panggilan API, response divalidasi Zod
+│   │   ├── formatRupiah.ts            → Format IDR
+│   │   ├── dateHelpers.ts             → Helper tanggal/periode
+│   │   ├── niceScale.ts               → niceCeiling() — bulatkan batas atas chart ke "angka
+│   │   │                                  bulat" 1/2/2.5/5/10 + ruang lega di atas puncak data
+│   │   └── exportXlsx.ts / exportCsv.ts / exportJson.ts / exportPdf.ts   → export (semua
+│   │       dynamic-import library-nya on-click, tidak masuk bundle awal)
+│   ├── context/AppContext.tsx         → Global state (periode aktif dashboard)
+│   ├── lib/queryClient.ts, lib/utils.ts   → React Query client + cn() classname helper
+│   ├── types/api.ts                   → Skema Zod untuk semua bentuk response API
+│   ├── App.tsx                        → Root komponen + React Router (semua halaman lazy-loaded)
+│   └── main.tsx                       → Vite entry point
 │
-├── shared/                        ← Python utilities (dipakai semua api/)
-│   ├── __init__.py
-│   ├── db.py                      → Supabase client init (pakai port 6543 PgBouncer)
-│   ├── auth.py                    → HMAC token generate & verify
-│   ├── doc_number.py              → Auto-generate doc number (KK-2026-06-001)
-│   ├── validator.py               → Input parsing: 25k→25000, 2jt→2000000
-│   └── period.py                  → Period lock checker sebelum POST
+├── db/                                 ← SQL migration (db/NN_*.sql, sorted(glob), idempotent,
+│                                          dijalankan MANUAL sekuensial ke Supabase — lihat scripts/migrate.py)
+│   ├── 01_schema.sql … 06_seed_periods.sql     (v1: 13 tabel inti + seed COA/bot/fee/periode)
+│   ├── 07_functions.sql                → RPC post_document, reverse_document, income_statement, dst
+│   ├── 08_security.sql                 → RLS ON semua tabel + REVOKE privilege anon/authenticated
+│   │                                      (kunci: tanpa file ini, anon key bisa baca/tulis semua tabel)
+│   ├── 09_daily_log.sql, 10_audit_extend.sql   (v1 lanjutan)
+│   ├── 11_receipts.sql                 (v2: tabel receipts untuk OCR struk)
+│   └── 12_budgets_goals.sql … 17_v3_preferences.sql   (v3: budgets, goals, recurring_
+│       transactions, bills, tags, transaction_tags, is_custom di chart_of_accounts,
+│       activity_log, seed preferensi bot_settings)
 │
-├── db/                            ← SQL migration files (run sekuensial di Supabase)
-│   ├── 01_schema.sql              → CREATE TABLE 13 tabel
-│   ├── 02_views.sql               → account_balances + monthly_summary views
-│   ├── 03_seed_coa.sql            → 74 akun COA
-│   ├── 04_seed_bot.sql            → bot_categories, bot_aliases, bot_settings
-│   ├── 05_seed_transfer_fees.sql  → transfer_fee_rules (10 rules)
-│   └── 06_seed_periods.sql        → Seed periode awal (Jun 2026+)
+├── tests/                               ← pytest (Python, 100% offline — Supabase & Telegram di-mock)
+│   ├── conftest.py, test_db.py, test_validator.py, test_parser.py       (v1/v2)
+│   └── test_forecast.py, test_fx.py, test_scheduling.py, test_activity.py,
+│       test_cron.py, test_reports.py, test_webhook_flows.py              (v3 — 80 test total)
 │
-├── tests/
-│   ├── test_db.py                 → Test koneksi Supabase
-│   ├── test_bot.py                → Test bot handlers
-│   └── test_api.py                → Test API endpoints
+├── e2e/                                  ← Playwright (frontend, API di-mock via page.route())
+│   ├── mocks.ts, README.md (jelasin keterbatasan: login asli via magic-link
+│   │   Telegram tidak bisa dites headless, jadi auth di-mock)
+│   └── auth/dashboard/journal/ledger/settings/budgets/goals/recurring/bills/
+│       navigation.spec.ts                (14 test total; + *.test.tsx tersebar
+│       di src/ untuk Vitest unit/component test, 42 test total)
 │
 ├── scripts/
-│   ├── setup_db.py                → Jalankan semua SQL migrations
-│   ├── setup_webhook.py           → Register Telegram webhook URL ke Telegram API
-│   └── backup_db.py               → Trigger manual backup
+│   ├── migrate.py, setup_db.py         → Jalankan db/*.sql sekuensial ke Supabase
+│   ├── setup_webhook.py                → Register webhook URL bot ke Telegram API
+│   ├── set_commands.py                 → Daftarkan command menu "/" bot ke Telegram (setMyCommands)
+│   ├── backup_db.py                    → Trigger manual backup
+│   └── ngrok.ps1                       → Tunnel lokal buat testing webhook tanpa deploy ke Vercel
 │
-├── .github/
-│   └── workflows/
-│       └── keepalive.yml          → Cron daily: ping Supabase + backup
+├── .github/workflows/
+│   ├── keepalive.yml                   → Cron: ping Supabase + backup harian
+│   └── scheduled-reports.yml           → Cron v3: job=daily/weekly/monthly/annual/housekeeping
+│                                          (curl ke api/cron/index.py, header X-Cron-Secret)
 │
 ├── docs/
-│   ├── FinTrack_ProjectDoc.docx   ← Dokumen ini
-│   └── CHEATSHEET.md
+│   ├── API.md                          → Referensi endpoint API
+│   └── CHANGELOG_v2.md                 → Changelog detail v2 (OCR struk + API layer integrasi)
 │
-├── index.html                     ← Vite entry HTML
-├── package.json                   ← React, Vite, React Router, Recharts
-├── vite.config.js                 ← Vite config + proxy /api untuk dev
-├── vercel.json                    ← Build config + SPA routing
-├── requirements.txt               ← python-telegram-bot, supabase, httpx
-├── .env                           ← Local secrets (gitignored)
-├── .env.example                   ← Template semua env vars
-├── .gitignore
-├── CHEATSHEET.md                  ← Quick reference commands
-├── DEPLOY.md                      ← Step-by-step deployment guide
-└── README.md
+├── index.html, vite.config.ts, tsconfig*.json   ← Vite/TypeScript config
+├── package.json                        → React 18 + Vite 5 + Tailwind v4 + React Query +
+│                                          Zod + Framer Motion + Radix UI + Recharts + xlsx +
+│                                          jspdf/jspdf-autotable + Vitest + Playwright
+├── vercel.json                         → Cuma 1 rewrite: /((?!api/).*) → /index.html (SPA)
+├── requirements.txt                    → supabase==2.31.0, python-dotenv==1.0.1, httpx==0.27.2
+│                                          (B7: sengaja minimal, TANPA numpy/pandas/python-telegram-bot)
+├── .env / .env.example                 → Secret lokal (gitignored) / template SEMUA env var
+│                                          (Telegram, Supabase, Auth, Webhook, Cron, OCR, API key, App URL)
+├── doc.txt                             ← Dokumen ini (build plan v1 §1-8 + appendix COA + §9
+│                                          changelog v2/v3, satu titik referensi utama proyek)
+├── README.md, CHEATSHEET.md, DEPLOY.md ← Dokumentasi pendukung (quick reference, deploy guide)
+└── backups/                             ← Dump SQL harian (dari GitHub Actions keepalive.yml)
+
 2.1 File Konfigurasi Kunci
 FILE
 ISI KRITIS
 vercel.json
-builds: Python runtime untuk api/, static-build untuk package.json. routes: /api/(.*) + catch-all /(.*) → /index.html
+1 rewrite: "/((?!api/).*)" → "/index.html". Fungsi Python di api/ auto-detected Vercel (tanpa builds/routes eksplisit) — PERSIS 12 file, lihat §9.4.
 requirements.txt
-python-telegram-bot==21.6 | supabase==2.9.0 | python-dotenv==1.0.1 | httpx==0.27.2
+supabase==2.31.0 | python-dotenv==1.0.1 | httpx==0.27.2 (B7: tanpa python-telegram-bot/numpy/pandas)
 package.json
-react@18 | react-dom@18 | react-router-dom@6 | recharts | @vitejs/plugin-react | vite@5
+react@18, vite@5, tailwindcss@4, @tanstack/react-query@5, zod@4, framer-motion@12, @radix-ui/*, recharts@2, xlsx@0.18 (export-only, lihat §9.7), jspdf@4+jspdf-autotable, vitest@4, @playwright/test
 .env
-TELEGRAM_BOT_TOKEN | SUPABASE_URL | SUPABASE_SERVICE_KEY | AUTH_SECRET | OWNER_TELEGRAM_ID
-vite.config.js
-proxy: { /api: { target: http://localhost:3000 } } untuk local dev. HMR config.
+TELEGRAM_BOT_TOKEN, OWNER_TELEGRAM_ID, SUPABASE_URL/SERVICE_KEY/DB_URL, AUTH_SECRET, WEBHOOK_SECRET, CRON_SECRET, OCR_API_KEY/URL/ENGINE/MAX_BYTES, FINTRACK_API_KEY, APP_URL, VITE_API_URL — lengkap di .env.example
+vite.config.ts
+proxy /api → http://localhost:3000 (vercel dev) untuk local dev. Blok test: vitest + jsdom + setupFiles src/test/setup.ts (mock matchMedia untuk AnimatedNumber, lihat §9.3/9.5).
 shared/db.py
-Koneksi ke Supabase port 6543 (PgBouncer, bukan 5432) + ?pgbouncer=true di connection string
+Koneksi ke Supabase port 6543 (PgBouncer, bukan 5432) + service_role key (BYPASSRLS) — otorisasi sepenuhnya bergantung pada require_session/require_auth/require_cron di shared/http.py, bukan RLS (lihat §9.7).
 3. DATABASE SCHEMA (13 Tabel + 2 Views)
 CREATE ORDER: chart_of_accounts → periods → sequences → transactions → journal_lines
 bot_categories → bot_category_accounts → bot_aliases → bot_settings

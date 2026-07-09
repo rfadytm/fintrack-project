@@ -21,24 +21,26 @@ class handler(BaseHTTPRequestHandler):
             return send_json(self, 401, {"error": "token invalid / expired"})
 
         db = get_client()
-        res = (
+        # Security fix: cek is_used dan tandai used dalam SATU UPDATE (bukan
+        # SELECT lalu UPDATE terpisah). Versi lama punya celah TOCTOU — dua
+        # request nyaris bersamaan dengan token yang sama bisa lolos SELECT
+        # is_used=false sebelum salah satunya sempat UPDATE, menghasilkan 2
+        # sesi dari 1 token single-use. WHERE is_used=false di UPDATE membuat
+        # Postgres cuma meloloskan SATU request lewat row lock, request kedua
+        # tidak akan match baris apa pun.
+        upd = (
             db.table("auth_tokens")
-            .select("*")
+            .update({"is_used": True, "used_at": datetime.now(timezone.utc).isoformat()})
             .eq("token", token)
             .eq("is_used", False)
             .execute()
         )
-        if not res.data:
+        if not upd.data:
             return send_json(self, 401, {"error": "token sudah dipakai / tidak ada"})
 
-        row = res.data[0]
+        row = upd.data[0]
         if datetime.fromisoformat(row["expires_at"]) < datetime.now(timezone.utc):
             return send_json(self, 401, {"error": "token expired"})
-
-        # Single-use: mark used
-        db.table("auth_tokens").update(
-            {"is_used": True, "used_at": datetime.now(timezone.utc).isoformat()}
-        ).eq("token", token).execute()
 
         cookie = session_cookie_header(create_session(payload["user_id"]))
         send_json(self, 200, {"logged_in": True}, extra_headers={"Set-Cookie": cookie})

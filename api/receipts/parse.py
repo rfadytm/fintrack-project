@@ -41,6 +41,11 @@ class handler(BaseHTTPRequestHandler):
             source = "receipt"
 
         # 1) Ambil bytes gambar
+        # Security: tolak base64 raksasa SEBELUM decode (bukan cuma setelahnya di
+        # ocr.extract_text) — caller yang punya session/API key valid tetap bisa
+        # kirim payload sangat besar kalau tidak dicek di sini duluan.
+        if img_b64 and len(img_b64) > ocr.MAX_BYTES * 2:
+            return send_json(self, 400, {"error": "image_base64 terlalu besar."})
         try:
             if file_id:
                 image = tg.download_file(file_id)

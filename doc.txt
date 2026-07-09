@@ -2561,3 +2561,82 @@ LIVE (2026-07-09):
    langsung dari GitHub Actions, termasuk notifikasi Telegram asli yang masuk.
 Tidak ada lagi langkah manual yang menggantung dari v3 — jadwal cron sekarang
 jalan otomatis sendiri sesuai on.schedule masing-masing.
+
+9.5 Perbaikan pasca-v3 — Laba Rugi, Buku Besar, Grafik, Dialog Akhir Bulan,
+Menu Bot, Animasi Angka (2026-07-09)
+Bukan fitur baru — respons atas beberapa laporan/permintaan user setelah v3 live.
+
+Pemasukan vs Laba Rugi (klarifikasi, bukan bug): user mengira Pemasukan=0 itu
+salah karena sudah setor saldo awal lewat /setup. Ditelusuri: secara akuntansi
+saldo awal (doc_type OB) memang tercatat sebagai Modal Awal (ekuitas, kode 3110)
+BUKAN pendapatan — RPC income_statement di db/07_functions.sql sudah benar
+memfilter hanya pendapatan+beban. Mengubahnya supaya OB ikut terhitung
+"Pemasukan" akan salah secara double-entry (modal ≠ income). User diberi opsi,
+jawabannya: buatkan pengecualian. Hasilnya: Laba Rugi/Pemasukan TETAP akurat
+(tidak diubah), tapi api/reports/index.py (_report_monthly) sekarang mengembalikan
+field baru opening_balance (dari _opening_balance(), menjumlah baris debit
+journal_lines untuk doc OB periode berjalan), dan Dashboard menampilkan catatan
+biru terpisah kalau bulan itu ada saldo awal — supaya user paham kenapa Pemasukan
+kelihatan rendah padahal sudah setor uang.
+
+Bug Buku Besar (ditemukan via code review, laporan user "masih ada error di buku
+besar" tidak spesifik): running_balance di _report_ledger selalu dihitung
+debit_amount - credit_amount — benar untuk akun normal debit (aset/beban), tapi
+TERBALIK untuk akun normal credit (liabilitas/ekuitas/pendapatan), misal saldo
+utang kelihatan makin kecil padahal sebenarnya nambah. Fix: query
+chart_of_accounts.normal_balance dulu, baru balik tanda delta-nya kalau akun itu
+normal credit. Ditest di tests/test_reports.py (kasus debit-normal & credit-normal
+terpisah).
+
+Grafik "Akumulasi Pengeluaran Harian" (Dashboard): sebelumnya satu pembelian besar
+(mis. langganan tahunan) bikin garis kumulatif melompat dan tetap tinggi sisa
+bulan, mendistorsi tren harian yang sebenarnya. Interpretasi permintaan user
+("buat 0-300rb, yang lebih besar buatkan list-nya, misal beli langganan Claude
+Pro"): TimelineSection di src/pages/Dashboard.tsx sekarang memisahkan baris
+beban >Rp300.000 (LARGE_EXPENSE_THRESHOLD) dari akumulasi harian — item itu
+ditampilkan sebagai daftar terpisah di bawah grafik (nama transaksi, tanggal,
+nominal), bukan ikut dijumlah ke garis tren. Kalau maksud user justru sumbu-Y
+di-cap hardcode 0-300rb, ini beda pendekatan dan perlu dikoreksi user.
+
+Dialog akhir bulan — tabung sisa bulan?: fitur baru, dipicu dua cara:
+1. Otomatis dari cron job=daily (_check_end_of_month di api/cron/index.py) kalau
+   besok sudah ganti bulan dan net bulan ini > 0 — kirim pesan dengan tombol
+   "Tabung Rp X" / "Nanti saja".
+2. Manual kapan saja lewat command baru /nabung (cmd_nabung di
+   api/telegram/webhook.py) — dialog yang sama, bisa dipanggil sebelum akhir
+   bulan juga.
+Tombol "Tabung" reuse alur transfer-ke-tabungan yang sudah ada (fee_rule +
+build_transfer_lines), bukan bikin jalur posting baru. Logic income/expense
+bulan berjalan diekstrak ke shared/reports.py (month_totals/
+month_totals_from_rows) supaya api/reports, api/cron, dan api/telegram/webhook
+tidak triplikasi query monthly_summary yang sama.
+
+Menu bot Telegram: tombol Budget/Goals/Berulang/Tagihan ditambahkan ke menu
+utama (main_menu() di webhook.py, callback act:budgets/act:goals/act:recurring/
+act:bills), dan scripts/set_commands.py diperbarui supaya semua command v3
+(/undo, /budget, /budgets, /goal, /goals, /recurring, /bill, /bills, /tag,
+/tags, /kategori, /convert, /nabung) muncul di menu "/" Telegram — sebelumnya
+command-command ini cuma bisa diketik manual, tidak terdaftar di
+setMyCommands. Sudah dijalankan user, hasil setMyCommands: true.
+
+Animasi angka di Dashboard: semua nominal (saldo kas, Pemasukan/Pengeluaran/
+Net/Savings Rate, catatan saldo awal, daftar pembelian besar) sekarang bergulir
+cepat dari 0 ke nilai sebenarnya lewat komponen baru
+src/components/ui/animated-number.tsx (framer-motion motion value di-bind
+langsung ke DOM span, bukan re-render React tiap frame — durasi ~0.9 detik
+saat load pertama, lebih cepat kalau nilainya berubah lagi misal ganti bulan).
+Menghormati prefers-reduced-motion (langsung tampil angka final tanpa animasi).
+Blindspot yang langsung ketemu saat testing: animasi yang mulai dari 0 bikin
+test unit (BalanceCard.test.tsx, pakai getByText yang sinkron, bukan nunggu)
+gagal karena baca teks sebelum animasi selesai — fix-nya BUKAN mengubah test,
+tapi mock window.matchMedia di src/test/setup.ts supaya prefers-reduced-motion
+selalu true di lingkungan test, jadi AnimatedNumber langsung render nilai akhir
+tanpa animasi (persis seperti perilaku production untuk user yang benar-benar
+set reduced-motion). Playwright e2e (browser asli, tanpa reduced-motion) tetap
+lolos karena expect().toBeVisible() Playwright otomatis polling sampai animasi
+selesai.
+
+Verifikasi (semua hijau sebelum push): 66 pytest (+6 baru untuk
+_opening_balance & _report_ledger sign fix), 36 Vitest, tsc bersih, build
+sukses, 14 Playwright e2e. Tidak ada migration/tabel baru, tidak nambah
+Serverless Function — masih persis 12.

@@ -2785,3 +2785,19 @@ sungguhan.
 
 Testing: 2 test baru di tests/test_webhook_flows.py (tombol act:cancel persis
 Menu/Saldo/Hari Ini, act:hari mengembalikan ringkasan). Total pytest 71 → 73.
+
+9.10 /hari diperbaiki jadi ringkasan 1 hari sungguhan (2026-07-09)
+Tindak lanjut catatan di 9.9: user konfirmasi mau diperbaiki. cmd_hari()
+(dipakai command /hari maupun tombol act:hari) sekarang benar-benar hitung
+transaksi HARI INI SAJA (bukan sebulan) — total Pemasukan/Pengeluaran/Net dari
+journal_lines yang transaction_date-nya hari ini, lalu:
+- Kalau ADA transaksi: tampilkan totalnya + daftar tiap transaksi (doc_number
+  — keterangan: nominal), sesuai permintaan "buatkan list list nya".
+- Kalau BELUM ADA transaksi sama sekali hari itu: tampilkan "Belum ada
+  transaksi hari ini" + tombol jalan pintas Menu & Saldo (pola yang sama
+  dengan act:cancel di 9.9), sesuai permintaan "balik lagi memberikan menu
+  /menu dan /saldo nya".
+
+Testing: 1 test lama (act:hari, masih ber-asumsi perilaku bulanan lama)
+diganti 2 test baru — kasus tidak ada transaksi (fallback Menu/Saldo) dan
+kasus ada transaksi (total + list muncul benar). Total pytest 73 → 74.

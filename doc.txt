@@ -2812,3 +2812,26 @@ atau daftar transaksi terakhir tanpa ketik /saldo atau /recent.
 
 Testing: 2 test baru — continue_keyboard() memuat act:saldo & act:recent,
 dan act:recent memicu cmd_recent dengan benar. Total pytest 74 → 76.
+
+9.12 Audit semua command bot satu per satu (2026-07-09)
+Tindak lanjut bug /hari (9.10): user minta SEMUA command dicek satu per satu
+apakah implementasinya benar-benar sesuai deskripsi/kegunaannya (bukan cuma
+/hari). Dicek satu per satu terhadap /help & scripts/set_commands.py:
+/start, /menu, /help, /saldo, /scan, /nihil, /hari, /bulan, /recent, /getlink,
+/setup, /reset, /skip, /undo, /budget(s), /goal(s), /recurring, /bill(s),
+/tag(s), /kategori, /convert, /nabung — semua match, tidak ada yang salah
+kayak /hari lagi.
+
+Ketemu 2 hal lain (beda jenis bug — bukan "isi salah", tapi "command yang
+DIKENALI malah dibilang tidak dikenal"): /lock dan /reverse men-syaratkan
+argumennya lengkap/valid SEBAGAI BAGIAN dari kondisi if command itu sendiri
+(cmd == "/lock" and len(parts) > 1 and "-" in parts[1]) — ketik "/lock" atau
+"/reverse" polos tanpa argumen jatuh terus ke fallback paling bawah
+"Perintah tidak dikenal. /help", padahal keduanya JELAS command yang
+dikenal, cuma kurang argumen. Fix: sekarang masing-masing balas pesan
+"Format: ..." sendiri kalau argumennya kosong/salah, konsisten dengan
+/budget /bill /tag /convert /kategori yang sudah begitu dari awal.
+
+Testing: 4 test baru (test_lock_without_args_shows_usage_not_unknown_command,
+test_lock_with_valid_args_still_locks_period, dan pasangannya untuk
+/reverse). Total pytest 76 → 80.

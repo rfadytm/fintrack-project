@@ -1338,13 +1338,25 @@ def handle_command(chat_id, user_id, text):
         return cmd_recent(chat_id, n)
     if cmd == "/getlink":
         return cmd_getlink(chat_id, user_id)
-    if cmd == "/lock" and len(parts) > 1 and "-" in parts[1]:
-        y, m = parts[1].split("-")
-        return cmd_lock(chat_id, int(y), int(m))
+    if cmd == "/lock":
+        # Blindspot fix: argumen kosong/salah format dulu jatuh ke fallback
+        # "Perintah tidak dikenal" di paling bawah — padahal /lock JELAS
+        # dikenal, cuma argumennya yang salah. Sekarang kasih format yang benar.
+        if len(parts) > 1 and "-" in parts[1]:
+            try:
+                y, m = parts[1].split("-")
+                return cmd_lock(chat_id, int(y), int(m))
+            except ValueError:
+                pass
+        return tg.send_message(chat_id, "Format: /lock YYYY-MM\nContoh: /lock 2026-07")
     if cmd == "/setup":
         return cmd_setup(chat_id, user_id)
-    if cmd == "/reverse" and len(parts) > 1:
-        return cmd_reverse(chat_id, parts[1])
+    if cmd == "/reverse":
+        # Blindspot fix: sama seperti /lock di atas — DOC kosong dulu jatuh ke
+        # "Perintah tidak dikenal", padahal /reverse dikenal, cuma kurang argumen.
+        if len(parts) > 1:
+            return cmd_reverse(chat_id, parts[1])
+        return tg.send_message(chat_id, "Format: /reverse <DOC>\nContoh: /reverse KK-2026-07-0001")
     if cmd in ("/reset", "/back"):
         reset_state(user_id)
         return tg.send_message(chat_id, "🔄 Direset.", keyboard=main_menu())

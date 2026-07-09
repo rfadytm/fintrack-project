@@ -322,3 +322,31 @@ def test_other_commands_still_interrupt_wizards():
     assert fs.state == "IDLE"
     send.assert_called_once()
     assert send.call_args.kwargs.get("keyboard") == webhook.main_menu()
+
+
+def test_lock_without_args_shows_usage_not_unknown_command():
+    """Command audit blindspot: /lock IS a recognized command, but its old guard
+    (cmd == "/lock" and len(parts) > 1 and "-" in parts[1]) meant missing/malformed
+    args fell all the way through to the generic "Perintah tidak dikenal" fallback
+    — factually wrong, since /lock was recognized, just missing an argument."""
+    with patch.object(webhook.tg, "send_message") as send:
+        webhook.handle_command(chat_id=1, user_id=1, text="/lock")
+    assert "Format: /lock YYYY-MM" in send.call_args[0][1]
+
+
+def test_lock_with_valid_args_still_locks_period():
+    with patch.object(webhook, "cmd_lock") as cmd_lock:
+        webhook.handle_command(chat_id=1, user_id=1, text="/lock 2026-07")
+    cmd_lock.assert_called_once_with(1, 2026, 7)
+
+
+def test_reverse_without_doc_shows_usage_not_unknown_command():
+    with patch.object(webhook.tg, "send_message") as send:
+        webhook.handle_command(chat_id=1, user_id=1, text="/reverse")
+    assert "Format: /reverse" in send.call_args[0][1]
+
+
+def test_reverse_with_doc_still_reverses():
+    with patch.object(webhook, "cmd_reverse") as cmd_reverse:
+        webhook.handle_command(chat_id=1, user_id=1, text="/reverse KK-2026-07-0001")
+    cmd_reverse.assert_called_once_with(1, "KK-2026-07-0001")

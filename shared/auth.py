@@ -1,4 +1,4 @@
-"""Custom HMAC auth (Flow 7).
+"""Custom HMAC auth.
 
 - Token = HMAC-SHA256(AUTH_SECRET, "{user_id}:{nonce}:{exp}") + payload, base64url.
 - Single-use: dicatat di tabel auth_tokens, di-mark is_used setelah verify.

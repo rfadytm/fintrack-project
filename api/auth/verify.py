@@ -1,4 +1,4 @@
-"""POST /api/auth/verify — token magic-link -> session cookie 30 hari (Flow 7)."""
+"""POST /api/auth/verify — token magic-link -> session cookie 30 hari."""
 from datetime import datetime, timezone
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))

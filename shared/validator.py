@@ -1,4 +1,4 @@
-"""Amount parsing (Bagian 6.3) + helper validasi.
+"""Amount parsing (doc.txt §6) + helper validasi.
 
 Contoh: 25000, 25.000, 25,000, 25k, 25rb -> 25000 ; 25jt -> 25_000_000 ; 2,5jt -> 2_500_000
 """

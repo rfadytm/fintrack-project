@@ -1684,3 +1684,50 @@ Testing: tests/test_reports.py +1 (select ledger menyertakan account_code),
 tests/test_forecast.py +5 (redam outlier tunggal, tidak pernah negatif,
 _winsorize menahan titik normal tapi meredam outlier, regression guard
 khusus untuk masking effect). Total pytest 80 → 86. tsc bersih.
+
+9.14 Forecast bertingkat (pendek/menengah/panjang) + landasan bulan lengkap (2026-07-09)
+Tindak lanjut §9.13's perbaikan forecast: user tanya "kapan nilai forecast
+bisa keluar" dengan konteks baru aktif 9 hari. Ditelusuri: window forecast
+lama SELALU mundur `months` (default 6) bulan kalender dari HARI INI, tidak
+peduli kapan user mulai pakai sistem — buat user baru, bulan-bulan sebelum
+mulai di-padding nol, dan winsorizing (§9.13) salah kira satu-satunya bulan
+asli sebagai outlier ekstrem (karena kelompok pembanding nol punya varians
+nol), jadi forecast diam-diam menunjukkan Rp 0 yang menyesatkan — bukan
+"belum cukup data", tampak seperti benar-benar dihitung 0.
+
+User sampaikan konteks pemakaian nyata sebagai landasan: bulan ke-2 sudah ada
+pemasukan, awal bulan ke-3 baru ada 1 bulan LENGKAP data. Diimplementasikan:
+
+1. api/reports/index.py: _earliest_posted_period() cari bulan pertama yang
+   benar-benar ada transaksi POSTED — window histori forecast TIDAK PERNAH
+   mundur ke sebelum bulan itu (tidak ada lagi padding nol palsu). Forecast
+   juga cuma menghitung bulan yang sudah LENGKAP (bulan berjalan yang belum
+   selesai dikeluarkan dari histori — membandingkan bulan penuh vs sebagian
+   bikin tren keliru).
+2. shared/forecast.py: holt_forecast(history, steps) — generalisasi
+   linear_forecast lama jadi proyeksi N-langkah dari model tren yang SAMA
+   (bukan model terpisah per horizon). 1 titik histori = proyeksi flat
+   (bawa nilai sama, trend=0) alih-alih None — sesuai landasan minimal yang
+   disepakati user ("1 bulan penuh" tetap dapat forecast, walau confidence
+   lebih rendah dari 2+ titik).
+3. Forecast dipecah 3 horizon dari model tren yang sama, masing-masing makin
+   ketat syarat datanya (rule of thumb forecasting: makin jauh horizon,
+   makin banyak histori yang perlu mendukungnya):
+   - Jangka pendek (1 bulan depan) — butuh ≥1 bulan lengkap.
+   - Jangka menengah (1 kuartal/3 bulan depan, dijumlah dari 3 proyeksi
+     bulanan) — butuh ≥2 bulan lengkap (minimal ada arah tren).
+   - Jangka panjang (1 tahun/12 bulan depan) — butuh ≥3 bulan lengkap.
+   Tier yang belum memenuhi syarat return {"income": null, "expense": null,
+   "min_real_months": N} — dashboard menampilkan "Belum cukup data — butuh
+   minimal N bulan penuh riwayat transaksi", BUKAN diam-diam 0.
+4. Dashboard Reports.tsx: ForecastCard dirombak jadi 3 kartu (pendek/
+   menengah/panjang) + catatan jumlah bulan lengkap yang jadi dasar hitungan.
+
+Testing: tests/test_forecast.py — linear_forecast([42]) sekarang == 42 (dulu
+None; ganti kontrak sesuai landasan "1 bulan = cukup"), + holt_forecast
+multi-step (flat 1 titik, ekstensi tren linear 3 titik, floor 0 per-langkah
+untuk tren turun tajam). tests/test_reports.py +6: tidak ada transaksi sama
+sekali, mulai bulan ini juga (0 bulan lengkap), 1/2/3 bulan lengkap membuka
+tier berikutnya satu per satu, dan window tidak pernah mundur ke sebelum
+mulai pakai walau `months` diminta lebih besar. Total pytest 86 → 97. tsc,
+42 Vitest, build, 14 Playwright e2e semua hijau.

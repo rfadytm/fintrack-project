@@ -197,12 +197,26 @@ const CategoryForecastSchema = z.object({
   history: z.array(z.number()),
   forecast: z.number().nullable().optional(),
 });
+// v3.1: forecast dipecah jadi 3 horizon dari model tren yang sama — makin
+// panjang horizon, makin banyak bulan lengkap yang disyaratkan sebelum
+// ditampilkan (null = belum cukup data, bukan diam-diam 0). Lihat
+// api/reports/index.py::_report_forecast & doc.txt §9.14.
+const ForecastTierSchema = z.object({
+  label: z.string(),
+  months: z.number(),
+  min_real_months: z.number(),
+  income: z.number().nullable(),
+  expense: z.number().nullable(),
+});
+export type ForecastTier = z.infer<typeof ForecastTierSchema>;
 export const ForecastSchema = z.object({
   months: z.number(),
+  real_months_available: z.number(),
   income_history: z.array(z.number()),
   expense_history: z.array(z.number()),
-  income_forecast: z.number().nullable().optional(),
-  expense_forecast: z.number().nullable().optional(),
+  short_term: ForecastTierSchema,
+  medium_term: ForecastTierSchema,
+  long_term: ForecastTierSchema,
   top_categories: z.array(CategoryForecastSchema),
 });
 export type Forecast = z.infer<typeof ForecastSchema>;

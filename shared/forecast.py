@@ -1,10 +1,11 @@
 """Statistik ringan tanpa numpy/pandas (B7: requirements.txt sengaja minimal).
 
 - zscore/is_anomaly: deteksi nilai yang menyimpang jauh dari rata-rata historis.
-- linear_forecast: proyeksi bulan depan via Holt's linear trend exponential
-  smoothing (bukan regresi OLS polos — lihat docstring linear_forecast soal
-  kenapa ini lebih tepat untuk deret pendek & rawan outlier seperti
-  income/expense bulanan personal).
+- holt_forecast/linear_forecast: proyeksi 1..N periode ke depan via Holt's
+  linear trend exponential smoothing (bukan regresi OLS polos — lihat
+  docstring holt_forecast soal kenapa ini lebih tepat untuk deret pendek &
+  rawan outlier seperti income/expense bulanan personal). Dipakai untuk
+  forecast jangka pendek/menengah/panjang di api/reports/index.py.
 """
 import math
 from statistics import mean, pstdev
@@ -70,30 +71,42 @@ def _winsorize(history: list[float], threshold: float = 2.5) -> list[float]:
     return result
 
 
-def linear_forecast(history: list[float]) -> float | None:
-    """Proyeksi bulan depan via Holt's linear trend exponential smoothing.
+def holt_forecast(history: list[float], steps: int = 1) -> list[float]:
+    """Proyeksi `steps` periode ke depan via Holt's linear trend exponential
+    smoothing — dipakai untuk forecast jangka pendek (1 bulan), menengah
+    (mis. 3 bulan), dan panjang (mis. 12 bulan) dari model tren yang SAMA,
+    bukan model terpisah per horizon.
 
     Kenapa bukan regresi OLS (versi sebelumnya): OLS menarik SATU garis lurus
     lewat SEMUA titik dengan bobot yang sama — untuk deret pendek (baru
     beberapa bulan data) dan rawan satu bulan outlier (belanja besar
     tak-berulang), itu gampang membengkok jauh dan gampang mengekstrapolasi
-    ekstrem. Holt's method (level + trend, diperbarui tiap titik dengan
+    ekstrem. Holt's method (level + tren, diperbarui tiap titik dengan
     pembobotan eksponensial) adalah teknik standar forecasting deret waktu
     pendek yang masih punya tren tapi noisy — observasi terbaru dapat bobot
     lebih besar, dan hasilnya tidak overreact ke satu titik ekstrem seperti
     OLS. Dikombinasikan dengan winsorizing (_winsorize) sebelum smoothing,
     supaya satu bulan anomali tidak mendistorsi tren jangka panjang.
 
-    history[0] = titik terlama, history[-1] = titik terbaru. Return proyeksi
-    untuk titik SETELAH history (mis. history = 6 bulan terakhir -> proyeksi
-    bulan ke-7). None kalau history < 2 titik. Hasil selalu >= 0 (nominal
-    uang tidak masuk akal negatif).
+    history[0] = titik terlama, history[-1] = titik terbaru — HARUS cuma
+    berisi bulan yang benar-benar sudah lengkap/ada datanya (caller yang
+    tanggung jawab tidak mem-padding bulan sebelum user mulai pakai sistem
+    dengan nol — nol palsu itu bikin winsorizing salah kira satu-satunya
+    bulan asli sebagai outlier, lihat catatan _winsorize & diskusi user soal
+    ini). Return list kosong kalau history kosong. 1 titik -> proyeksi flat
+    (bawa nilai sama ke depan, trend=0) karena belum cukup untuk hitung
+    tren — LEBIH BAIK dari tidak ada forecast sama sekali begitu user punya
+    1 bulan lengkap (landasan minimal yang disepakati), tapi confidence-nya
+    jelas lebih rendah dari 2+ titik. Tiap elemen hasil di-floor ke 0
+    (nominal uang tidak masuk akal negatif).
     """
     n = len(history)
-    if n < 2:
-        return None
-    smoothed = _winsorize(history)
+    if n < 1 or steps < 1:
+        return []
+    if n == 1:
+        return [max(0.0, history[0])] * steps
 
+    smoothed = _winsorize(history)
     alpha, beta = 0.4, 0.3  # bobot level vs tren — nilai umum dipakai Holt's method
     level = smoothed[0]
     trend = smoothed[1] - smoothed[0]
@@ -102,4 +115,12 @@ def linear_forecast(history: list[float]) -> float | None:
         trend = beta * (new_level - level) + (1 - beta) * trend
         level = new_level
 
-    return max(0.0, level + trend)
+    return [max(0.0, level + trend * h) for h in range(1, steps + 1)]
+
+
+def linear_forecast(history: list[float]) -> float | None:
+    """Proyeksi 1 periode ke depan — alias 1-step dari holt_forecast(),
+    dipertahankan untuk caller lama (mis. forecast per kategori). None kalau
+    history kosong."""
+    result = holt_forecast(history, steps=1)
+    return result[0] if result else None

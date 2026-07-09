@@ -12,6 +12,7 @@ import { Input } from "../components/ui/input";
 import { Skeleton } from "../components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import type { ForecastTier } from "../types/api";
 
 export default function Reports() {
   const { period, setPeriod } = useApp();
@@ -97,6 +98,31 @@ function RangeAnalysis() {
   );
 }
 
+function ForecastTierCard({ tier }: { tier: ForecastTier }) {
+  const locked = tier.income == null;
+  return (
+    <div className="rounded-xl border border-navy/10 p-3">
+      <div className="text-navy text-sm font-semibold">{tier.label}</div>
+      {locked ? (
+        <p className="text-muted text-xs mt-2">
+          Belum cukup data — butuh minimal {tier.min_real_months} bulan penuh riwayat transaksi.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <div>
+            <div className="text-muted text-xs">Proyeksi Pemasukan</div>
+            <div className="font-bold text-green">{formatRupiah(tier.income)}</div>
+          </div>
+          <div>
+            <div className="text-muted text-xs">Proyeksi Pengeluaran</div>
+            <div className="font-bold text-red">{formatRupiah(tier.expense)}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ForecastCard() {
   const forecastQuery = useQuery({ queryKey: ["reports", "forecast"], queryFn: () => api.forecast(6) });
   if (forecastQuery.isLoading) return <Skeleton className="h-64" />;
@@ -106,17 +132,17 @@ function ForecastCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Proyeksi Bulan Depan ({d.months} bulan histori)</CardTitle>
+        <CardTitle>Proyeksi Keuangan</CardTitle>
       </CardHeader>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-        <div>
-          <div className="text-muted text-xs">Proyeksi Pemasukan</div>
-          <div className="text-xl font-bold text-green mt-1">{formatRupiah(d.income_forecast)}</div>
-        </div>
-        <div>
-          <div className="text-muted text-xs">Proyeksi Pengeluaran</div>
-          <div className="text-xl font-bold text-red mt-1">{formatRupiah(d.expense_forecast)}</div>
-        </div>
+      <p className="text-muted text-xs mb-3">
+        Berdasarkan {d.real_months_available} bulan riwayat transaksi LENGKAP (bulan berjalan tidak
+        dihitung). Makin panjang horizonnya, makin banyak bulan lengkap yang disyaratkan sebelum
+        ditampilkan — supaya proyeksi tidak menebak dari data yang belum cukup.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+        <ForecastTierCard tier={d.short_term} />
+        <ForecastTierCard tier={d.medium_term} />
+        <ForecastTierCard tier={d.long_term} />
       </div>
       {d.top_categories.length > 0 && (
         <>

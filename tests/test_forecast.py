@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared.forecast import _winsorize, is_anomaly, linear_forecast, threshold_for, zscore
+from shared.forecast import _winsorize, holt_forecast, is_anomaly, linear_forecast, threshold_for, zscore
 
 
 def test_zscore_none_with_insufficient_history():
@@ -46,9 +46,15 @@ def test_linear_forecast_increasing_trend():
     assert linear_forecast([10, 20, 30, 40]) == 50
 
 
-def test_linear_forecast_insufficient_history():
+def test_linear_forecast_empty_history():
     assert linear_forecast([]) is None
-    assert linear_forecast([42]) is None
+
+
+def test_linear_forecast_single_month_is_flat_carry_forward():
+    """User's stated threshold: 1 lengkap bulan sudah cukup jadi landasan
+    forecast (bukan None) — cuma belum cukup untuk hitung TREN, jadi proyeksi
+    flat (bawa nilai yang sama), bukan proyeksi berbasis tren."""
+    assert linear_forecast([42]) == 42
 
 
 def test_linear_forecast_dampens_single_outlier_month():
@@ -90,3 +96,29 @@ def test_winsorize_not_fooled_by_masking_effect():
     history = [100, 100, 100, 100, 10_000]
     capped = _winsorize(history)
     assert capped[-1] < 5000
+
+
+def test_holt_forecast_empty_history_returns_empty_list():
+    assert holt_forecast([]) == []
+    assert holt_forecast([100], steps=0) == []
+
+
+def test_holt_forecast_single_month_flat_across_all_steps():
+    # 1 bulan lengkap = landasan minimal user, tapi belum ada tren -> proyeksi
+    # flat (sama) untuk tiap bulan ke depan, bukan diproyeksikan naik/turun.
+    assert holt_forecast([500_000], steps=3) == [500_000, 500_000, 500_000]
+
+
+def test_holt_forecast_multistep_extends_linear_trend():
+    # 10, 20, 30, 40 naik 10/bulan -> bulan ke-5,6,7 = 50, 60, 70.
+    assert holt_forecast([10, 20, 30, 40], steps=3) == [50, 60, 70]
+
+
+def test_holt_forecast_medium_and_long_term_sum_matches_per_step():
+    """Forecast jangka menengah (per kuartal) & panjang (per tahun) di
+    api/reports/index.py dijumlahkan dari proyeksi per-bulan holt_forecast —
+    pastikan tiap langkah individual tetap konsisten (di-floor ke 0 per
+    langkah, bukan cuma di jumlah akhir) untuk tren menurun tajam."""
+    steps = holt_forecast([100, 60, 20], steps=3)
+    assert steps[0] == 0.0  # bulan pertama sudah proyeksi negatif -> floor 0
+    assert all(s == 0.0 for s in steps)

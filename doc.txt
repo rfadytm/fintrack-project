@@ -2640,3 +2640,42 @@ Verifikasi (semua hijau sebelum push): 66 pytest (+6 baru untuk
 _opening_balance & _report_ledger sign fix), 36 Vitest, tsc bersih, build
 sukses, 14 Playwright e2e. Tidak ada migration/tabel baru, tidak nambah
 Serverless Function — masih persis 12.
+
+9.6 Simulasi menyeluruh backend + frontend, 2 bug ketemu (2026-07-09)
+Bukan permintaan fitur — user minta "simulasikan" seluruh backend & frontend
+buat cari bug. Ditelusuri lewat code review sistematis (bukan live bot/Supabase,
+tidak ada token/DB asli di lingkungan dev — sama seperti keterbatasan simulasi
+yang sudah dicatat di 9.4/e2e/README.md): semua endpoint API (budgets, goals,
+recurring, bills, tags, accounts custom category), semua job cron (daily/
+weekly/monthly/annual/housekeeping), seluruh wizard command bot di
+webhook.py, dan semua halaman dashboard v3 (Budgets/Goals/Recurring/Bills/
+Journal/COA/Reports/Settings). 2 bug nyata ketemu, 0 bug di sisi frontend
+(cuma penambahan test, tidak ada perubahan kode frontend):
+
+1. Recurring transaction bisa geser jadwal permanen kalau cron telat
+   (api/cron/index.py, _execute_recurring): next_run berikutnya sebelumnya
+   dihitung dari `today` (tanggal SAAT cron kebetulan jalan), bukan dari
+   next_run yang TERJADWAL di baris recurring_transactions. GitHub Actions
+   scheduled workflow didokumentasikan resmi bisa telat dari menit sampai jam
+   saat beban tinggi. Kalau itu terjadi, jangkar tanggal/hari recurring
+   (mis. langganan bulanan tgl 5) ikut geser maju permanen setiap kali cron
+   telat — bukan cuma telat sekali, tapi drift terus-menerus. Fix: majukan
+   dari r["next_run"] (tanggal yang terjadwal), bukan `today`.
+2. "/skip" saat isi keterangan pengeluaran/pemasukan tidak pernah benar-benar
+   berfungsi (api/telegram/webhook.py, handle_text): prompt bot sendiri bilang
+   "Ketik keterangan (atau /skip)", tapi router "text.startswith('/') ->
+   handle_command" jalan LEBIH DULU dari pengecekan state EXPENSE_DESC/
+   INCOME_DESC, jadi "/skip" selalu ditangkap handle_command's fallback
+   ("Tidak ada yang di-skip.") dan keterangan tidak pernah ter-skip — fitur
+   yang dijanjikan pesan bot sendiri ternyata dead code sejak awal. Fix:
+   handle_text sekarang cek dulu apakah state lagi EXPENSE_DESC/INCOME_DESC
+   dan textnya persis "/skip" sebelum diserahkan ke command router generik.
+   Sekalian dibersihkan: fallback command /skip yang lama punya ternary mati
+   (`... if False else ...`) — disederhanakan.
+
+Regresi ditest: tests/test_cron.py (baru — next_run tetap tgl 5 walau cron
+baru jalan tgl 8), tambahan di tests/test_webhook_flows.py (/skip saat
+EXPENSE_DESC benar-benar advance state, /skip di luar state itu tetap fallback
+seperti biasa, command lain selain /skip tetap bisa interupsi wizard yang
+sedang jalan — regression guard biar fix ini tidak merusak perilaku command
+lain). Total pytest 66 → 71, semua hijau.

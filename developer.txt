@@ -33,6 +33,7 @@ DAFTAR ISI
     7.1  Kenapa Fitur Ini Ada
     7.2  Cara Kerjanya
     7.3  Yang HARUS Diinget Kalau Nambah Fitur Baru
+    7.4  Contoh Nyata Kenapa Aturan 7.3 Bukan Basa-Basi (2026-07-11)
 8.  Kerja Sehari-hari
     8.1  Jalanin Semuanya di Lokal
     8.2  Testing
@@ -398,6 +399,35 @@ disamarkan.
   serupa buat endpoint/field baru, biar kalau suatu saat ada yang gak
   sengaja lupa nge-mask, ketahuan dari test yang gagal, bukan dari
   laporan orang yang gak sengaja liat angka lu.
+
+--------------------------------------------------------------------------------
+7.4 CONTOH NYATA KENAPA ATURAN 7.3 DI ATAS BUKAN BASA-BASI (2026-07-11)
+--------------------------------------------------------------------------------
+Ini beneran kejadian, bukan hipotetis: `_report_trial_balance` di
+`api/reports/index.py` sempat CUMA nge-mask `{"total_debit",
+"total_credit"}`, padahal RPC `trial_balance` yang dia panggil
+mengembalikan TIGA field bernominal per baris — ada `"balance"` yang
+ketinggalan. Akibatnya saldo akun ASLI (mis. saldo Bank BNI beneran)
+kekirim ke SIAPAPUN yang akses `/api/reports?report=trial-balance` tanpa
+login, di production, sampai ketahuan lewat audit `curl` langsung ke
+endpoint publik itu (bukan cuma baca kode / lewat test lokal).
+
+Kenapa lolos: `tests/test_masking.py` waktu itu cuma nyakup ledger,
+monthly, forecast, balance — TIDAK ADA test masking buat trial-balance,
+income-statement, atau range sama sekali. Fungsi tetangganya,
+`_report_balance`, kebetulan udah bener (nyebut ketiga field), jadi pola
+yang salah cuma ada di SATU fungsi — tapi karena gak ada test yang
+nyentuh fungsi itu, gak ada apapun yang bisa nangkep bedanya.
+
+Pelajaran konkret buat masa depan: field yang perlu di-mask di satu
+laporan BELUM TENTU sama persis sama field di laporan tetangganya yang
+kelihatan mirip — jangan asumsi dari nama fungsi yang mirip, CEK LANGSUNG
+apa aja field bernominal yang beneran dikembalikan tiap fungsi (baca
+`return` statement-nya atau print hasil RPC-nya), dan pastikan ADA test
+masking buat SETIAP fungsi `_report_*`, bukan cuma sebagian. "Kelihatan
+sudah di-mask karena ada `if is_public(viewer): mask_rows(...)` di situ"
+tidak sama dengan "SEMUA field bernominal beneran ke-mask" — set field
+yang disebut di `mask_rows(...)` itu yang harus dicek satu-satu.
 
 ================================================================================
 8. KERJA SEHARI-HARI

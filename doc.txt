@@ -19,7 +19,7 @@ COA
 Akun Bank
 BNI (Kas Besar) | SeaBank (Imprest Rp500rb) | Bank Tabungan TBD
 Tanggal
-v1: 15 Juni 2026 — terakhir diperbarui: 2026-07-10
+v1: 15 Juni 2026 — terakhir diperbarui: 2026-07-11
 1. PROJECT OVERVIEW
 1.1 Deskripsi
 FinTrack adalah sistem akuntansi keuangan personal berbasis double-entry bookkeeping, dibangun dengan arsitektur cloud-first menggunakan Vercel (serverless) + Supabase (PostgreSQL) + Telegram Bot sebagai primary input interface. Sistem dirancang scalable — COA, workflow, dan schema sudah production-ready sehingga bisa dijadikan template UMKM atau PT tanpa rebuild.
@@ -1807,3 +1807,93 @@ console error/NaN/undefined yang bocor ke layar. Total pytest 97 → 111
 (+2 pre-existing kegagalan tests/test_db.py butuh koneksi Supabase
 sungguhan, tidak berubah dari sebelumnya). Vitest 42 → 44. tsc, build
 semua hijau.
+
+9.16 KRITIS: kebocoran saldo asli di laporan trial-balance publik,
+ditemukan lewat audit out-of-the-box (2026-07-11)
+Konteks: user minta trial menyeluruh + "berfikir out of the box" cari
+blindspot di kedua project (portofolio + app ini) sekaligus terintegrasi,
+setelah fitur masking §9.15 dianggap selesai. Audit dilakuin dua lapis:
+(a) subagent baca kode statis nyari kebocoran yang mungkin lolos §9.15,
+(b) curl LANGSUNG ke endpoint publik production (fintrack-project-mu.
+vercel.app) tanpa cookie/session sama sekali, buat verifikasi bukan cuma
+"kodenya kelihatan benar" tapi "benar-benar begini responsnya di
+internet sekarang".
+
+Lapis (b) yang nemuin bug beneran: GET /api/reports?report=trial-balance
+mengembalikan field "balance" PER AKUN dengan angka ASLI (saldo beneran
+tiap akun kekirim mentah-mentah ke visitor tanpa login — angka
+persisnya sengaja TIDAK dicatat di sini, karena repo ini publik dan
+nyatet angka asli di dokumen yang ke-push ke repo publik cuma
+mindahin masalah yang lagi diperbaiki ini ke tempat baru), padahal
+"total_debit"/"total_credit" di respons yang sama sudah null. Artinya
+fitur masking §9.15 BOCOR di satu laporan spesifik — sempat live di
+production sebelum ketauan dan diperbaiki sesi ini.
+
+Akar masalah: _report_trial_balance (api/reports/index.py) manggil
+mask_rows(rows, {"total_debit", "total_credit"}) — RPC trial_balance
+sebenarnya mengembalikan TIGA field bernilai uang per baris (total_debit,
+total_credit, DAN balance), tapi set field yang di-mask cuma nyebut dua.
+Ini persis pola yang sama dipakai benar di _report_balance (fungsi
+tetangga, baris di atasnya) yang SUDAH menyebut ketiganya — kemungkinan
+salin-tempel yang keliru pas nulis _report_trial_balance. tests/
+test_masking.py yang ada sebelumnya cuma nyakup ledger/monthly/forecast/
+balance — trial-balance, income-statement, dan range TIDAK PERNAH ada
+test masking sama sekali, jadi tidak ada yang nangkep ini sebelum lolos
+ke production.
+
+Perbaikan: tambah "balance" ke set field yang di-mask di
+_report_trial_balance. Ditambah 8 test regresi baru (trial-balance x2,
+income-statement x2, range x2, plus 1 test top_categories forecast di
+bawah, dan test yang lain buat memastikan owner tetap lihat angka asli)
+buat nutup celah cakupan yang sama biar tidak terulang di laporan lain.
+Sambil di situ, ketemu juga bug pada _mock_table helper di test file:
+tidak nge-stub method .gte()/.lte() yang dipake _report_range — bikin
+2 test range yang baru ditulis GAGAL sampe helper-nya diperbaiki (jadi
+dulu kalau ada yang nulis test buat _report_range, bakal gagal juga,
+cuma belum pernah ada yang nyoba).
+
+Dua temuan tambahan dari audit yang sama, lebih ringan tapi tetap
+diperbaiki:
+1. Kebocoran urutan (bukan nilai) di forecast: top_categories disortir
+   berdasarkan nilai forecast ASLI (real, sebelum di-mask), lalu di-mask
+   SETELAH urutan ditentukan. Nilai angkanya sudah null, tapi URUTAN 5
+   kategori teratas tetap bocor informasi "kategori mana yang paling
+   besar pengeluarannya" ke visitor publik — magnitude terenkripsi jadi
+   ranking, bukan lagi jadi angka. Diperbaiki: setelah masking, list-nya
+   disortir ULANG alfabetis by nama akun, biar urutan tidak lagi
+   membawa informasi dari nilai asli.
+2. useExportGuard.ts: dialog "hanya pemilik" bisa sempat nongol keliru
+   ke OWNER yang beneran login, kalau dia klik export pas /api/auth/me
+   masih loading (loggedIn defaultnya false selama itu). Dulu hook-nya
+   nyerahin tanggung jawab "tunggu loading dulu" ke pemanggil lewat
+   komentar dokumentasi — tapi ternyata ketiga titik pemanggilnya
+   (Journal/Ledger/Reports) tidak ada yang beneran ngelakuin itu.
+   Dipindah jadi logic di dalam guard() sendiri (`if (loading) return`)
+   biar tidak bisa kelewat lagi di titik pemanggil manapun di masa depan.
+
+BUKAN bug, tapi dicatat sebagai temuan UX yang sengaja BELUM diperbaiki
+sesi ini (butuh keputusan desain dari user dulu): angka yang di-mask
+jadi `null` dirender formatRupiah() sebagai "Rp 0" di UI (bukan sebagai
+"data disembunyikan"), karena `Number(null || 0)` di formatRupiah.ts.
+Visitor publik yang liat "Rp 0" di semua akun bisa salah kira app-nya
+kosong/rusak, bukan ngerti bahwa datanya sengaja disamarkan — ini
+berpotensi bikin "Live Demo" keliatan kurang meyakinkan buat hiring
+manager. TIDAK diubah sesi ini karena formatRupiah() dipakai di 13+
+file termasuk halaman yang owner pakai sehari-hari buat data ASLI-nya
+sendiri — ubah perilakunya butuh cara buat bedain "null karena masking"
+vs "null karena alasan lain" dulu (mis. field baru di respons API), dan
+itu keputusan desain yang lebih aman ditanyakan ke user daripada
+diputuskan sepihak.
+
+Verifikasi: dites langsung ke endpoint production (bukan cuma test
+lokal) — trial-balance, income-statement, range, ledger, balance,
+monthly, forecast semua dicek ulang satu-satu lewat curl tanpa cookie
+setelah fix di-deploy, dan semua "balance"/"amount"/"total_*" yang
+seharusnya di-mask sudah null. Trial terintegrasi juga jalanin Playwright
+dari live fintrack-portfolio: klik "Live Demo" di halaman /fintrack ->
+mendarat di /dashboard tanpa diminta login -> tombol export .xlsx di
+/reports beneran nampilin dialog "Akses terbatas" ke visitor publik.
+
+Testing: pytest 111 → 118 (8 test masking baru + fix helper). Vitest
+44 → 45 (1 test baru: guard() no-op selagi auth masih loading). tsc,
+build semua hijau.

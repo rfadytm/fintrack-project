@@ -10,6 +10,15 @@ def send_json(handler, status: int, obj, extra_headers: dict | None = None):
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
+    # Every response through here can depend on the caller's identity
+    # (session cookie vs public — see session_or_public/shared/masking.py):
+    # the SAME url with different cookies must never risk returning the
+    # same cached bytes to two different viewers. Vercel's platform default
+    # (`public, max-age=0, must-revalidate`, no `Vary: Cookie`) happens to
+    # be safe today only because max-age=0 forces revalidation — this makes
+    # it explicit and unconditional instead of relying on a platform
+    # default this app doesn't control.
+    handler.send_header("Cache-Control", "private, no-store")
     if extra_headers:
         for k, v in extra_headers.items():
             handler.send_header(k, v)

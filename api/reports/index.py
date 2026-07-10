@@ -143,7 +143,7 @@ def _report_trial_balance(db, q, viewer):
     balanced = total_debit == total_credit
     accounts = rows
     if is_public(viewer):
-        accounts = mask_rows(rows, {"total_debit", "total_credit"})
+        accounts = mask_rows(rows, {"total_debit", "total_credit", "balance"})
         total_debit, total_credit = mask_amount(total_debit), mask_amount(total_credit)
     return 200, {
         "year": year,
@@ -395,10 +395,17 @@ def _report_forecast(db, q, viewer):
         short_term = {**short_term, "income": mask_amount(short_term["income"]), "expense": mask_amount(short_term["expense"])}
         medium_term = {**medium_term, "income": mask_amount(medium_term["income"]), "expense": mask_amount(medium_term["expense"])}
         long_term = {**long_term, "income": mask_amount(long_term["income"]), "expense": mask_amount(long_term["expense"])}
-        top_categories = [
-            {**c, "history": mask_number_list(c["history"]), "forecast": mask_amount(c["forecast"])}
-            for c in top_categories
-        ]
+        # Re-sort alphabetically after masking, not just null the values —
+        # the pre-mask list is order-by-real-forecast-descending, so
+        # presentation order alone would still leak which expense category
+        # is biggest/smallest even with every number replaced by None.
+        top_categories = sorted(
+            (
+                {**c, "history": mask_number_list(c["history"]), "forecast": mask_amount(c["forecast"])}
+                for c in top_categories
+            ),
+            key=lambda r: r["account_name"] or "",
+        )
     return 200, {
         "months": window,
         "real_months_available": real_available,

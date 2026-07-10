@@ -29,6 +29,25 @@ describe("useExportGuard", () => {
     expect(result.current.dialogOpen).toBe(false);
   });
 
+  it("no-ops while the auth check is still in flight, does not flash the owner-only dialog", async () => {
+    let resolveFetch!: (value: unknown) => void;
+    const pending = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(pending));
+    const { result } = renderHook(() => useExportGuard(), { wrapper });
+
+    expect(result.current.loading).toBe(true);
+    const run = vi.fn();
+    act(() => result.current.guard(run));
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result.current.dialogOpen).toBe(false);
+
+    act(() => resolveFetch({ status: 200, ok: true, json: async () => ({ logged_in: true }) }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+  });
+
   it("blocks the export and opens the dialog when not logged in", async () => {
     vi.stubGlobal(
       "fetch",

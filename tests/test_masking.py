@@ -34,7 +34,7 @@ OWNER = {"via": "session", "uid": 1}
 
 def _mock_table(**overrides):
     m = MagicMock()
-    for method in ("select", "eq", "gt", "in_", "order", "range", "limit"):
+    for method in ("select", "eq", "gt", "gte", "lte", "in_", "order", "range", "limit"):
         getattr(m, method).return_value = m
     result = MagicMock()
     result.data = overrides.get("data", [])
@@ -177,6 +177,45 @@ def test_report_forecast_masks_history_and_unlocked_tier_for_public_viewer():
     assert body["real_months_available"] == 1
 
 
+def _forecast_client_with_categories(earliest_year, earliest_month):
+    tx_table = _mock_table(data=[{"period_year": earliest_year, "period_month": earliest_month}])
+    summary_table = _mock_table(data=[{"account_type": "pendapatan", "total_credit": 100, "total_debit": 0}])
+    lines_table = _mock_table(
+        data=[
+            {
+                "account_code": "5110",
+                "debit_amount": 500_000,
+                "chart_of_accounts": {"account_name": "Zebra Expense", "account_type": "beban"},
+            },
+            {
+                "account_code": "5120",
+                "debit_amount": 100_000,
+                "chart_of_accounts": {"account_name": "Alpha Expense", "account_type": "beban"},
+            },
+        ]
+    )
+    client = MagicMock()
+    client.table.side_effect = lambda name: {
+        "transactions": tx_table, "monthly_summary": summary_table, "journal_lines": lines_table,
+    }[name]
+    return client
+
+
+def test_report_forecast_top_categories_order_does_not_leak_ranking_for_public_viewer():
+    """Regression test for a blindspot found via out-of-the-box audit
+    2026-07-10: values were masked but top_categories stayed sorted by the
+    REAL forecast magnitude, so presentation order alone still told a
+    public visitor which expense category is biggest. Fixed by re-sorting
+    alphabetically after masking (see _report_forecast)."""
+    client = _forecast_client_with_categories(2026, 6)
+    with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
+        status, body = reports_index._report_forecast(client, {}, PUBLIC)
+    assert status == 200
+    names = [c["account_name"] for c in body["top_categories"]]
+    assert names == sorted(names), "public top_categories order must not track real magnitude ranking"
+    assert all(c["forecast"] is None for c in body["top_categories"])
+
+
 def test_report_forecast_owner_sees_real_unlocked_tier_value():
     """Companion to the public test above — confirms masking is genuinely
     viewer-conditional (owner still gets the real computed forecast), not
@@ -212,3 +251,113 @@ def test_report_balance_shows_real_totals_for_owner():
     )
     status, body = reports_index._report_balance(client, {}, OWNER)
     assert body["balances"][0]["balance"] == 700
+
+
+# ---------- integration: _report_trial_balance ----------
+# Regression coverage for a real bug found via live production testing on
+# 2026-07-10: the trial_balance RPC returns a per-account "balance" field
+# (in addition to total_debit/total_credit), but the masking call only
+# listed {"total_debit", "total_credit"} — "balance" leaked real rupiah
+# amounts to unauthenticated public visitors on the live demo. Fixed by
+# adding "balance" to the masked-fields set in _report_trial_balance.
+
+
+def _trial_balance_client():
+    client = MagicMock()
+    rpc_result = MagicMock()
+    rpc_result.data = [
+        {"code": "1110", "account_name": "Kas", "total_debit": 900, "total_credit": 200, "balance": 700},
+    ]
+    client.rpc.return_value.execute.return_value = rpc_result
+    return client
+
+
+def test_report_trial_balance_masks_balance_for_public_viewer():
+    client = _trial_balance_client()
+    status, body = reports_index._report_trial_balance(client, {"year": "2026", "month": "7"}, PUBLIC)
+    assert status == 200
+    row = body["accounts"][0]
+    assert row["balance"] is None, "per-account balance must be masked for public viewers"
+    assert row["total_debit"] is None
+    assert row["total_credit"] is None
+    assert body["total_debit"] is None
+    assert body["total_credit"] is None
+    assert row["account_name"] == "Kas"  # not money — untouched
+
+
+def test_report_trial_balance_shows_real_balance_for_owner():
+    client = _trial_balance_client()
+    status, body = reports_index._report_trial_balance(client, {"year": "2026", "month": "7"}, OWNER)
+    assert status == 200
+    assert body["accounts"][0]["balance"] == 700
+    assert body["total_debit"] == 900
+
+
+# ---------- integration: _report_income_statement ----------
+
+
+def _income_statement_client():
+    client = MagicMock()
+    rpc_result = MagicMock()
+    rpc_result.data = [
+        {"code": "4110", "account_name": "Gaji", "account_type": "pendapatan", "amount": 5_000_000},
+        {"code": "5110", "account_name": "Makan", "account_type": "beban", "amount": 500_000},
+    ]
+    client.rpc.return_value.execute.return_value = rpc_result
+    return client
+
+
+def test_report_income_statement_masks_amounts_for_public_viewer():
+    client = _income_statement_client()
+    status, body = reports_index._report_income_statement(client, {"year": "2026", "month": "7"}, PUBLIC)
+    assert status == 200
+    assert body["revenue"][0]["amount"] is None
+    assert body["expense"][0]["amount"] is None
+    assert body["total_revenue"] is None
+    assert body["total_expense"] is None
+    assert body["net_income"] is None
+    assert body["revenue"][0]["account_name"] == "Gaji"  # not money — untouched
+
+
+def test_report_income_statement_shows_real_amounts_for_owner():
+    client = _income_statement_client()
+    status, body = reports_index._report_income_statement(client, {"year": "2026", "month": "7"}, OWNER)
+    assert status == 200
+    assert body["total_revenue"] == 5_000_000
+    assert body["net_income"] == 4_500_000
+
+
+# ---------- integration: _report_range ----------
+
+
+def _range_client():
+    lines_table = _mock_table(
+        data=[
+            {
+                "account_code": "4110",
+                "debit_amount": 0,
+                "credit_amount": 5_000_000,
+                "chart_of_accounts": {"account_name": "Gaji", "account_type": "pendapatan"},
+                "transactions": {"status": "POSTED", "transaction_date": "2026-07-01"},
+            },
+        ]
+    )
+    client = MagicMock()
+    client.table.return_value = lines_table
+    return client
+
+
+def test_report_range_masks_amounts_for_public_viewer():
+    client = _range_client()
+    status, body = reports_index._report_range(client, {"date_from": "2026-07-01", "date_to": "2026-07-31"}, PUBLIC)
+    assert status == 200
+    assert body["revenue"][0]["amount"] is None
+    assert body["total_revenue"] is None
+    assert body["net_income"] is None
+
+
+def test_report_range_shows_real_amounts_for_owner():
+    client = _range_client()
+    status, body = reports_index._report_range(client, {"date_from": "2026-07-01", "date_to": "2026-07-31"}, OWNER)
+    assert status == 200
+    assert body["total_revenue"] == 5_000_000

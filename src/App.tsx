@@ -84,19 +84,28 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/auth" element={<AuthCallback />} />
-            <Route element={<ProtectedRoute />}>
-              <Route element={<Layout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/journal" element={<Journal />} />
-                <Route path="/ledger" element={<Ledger />} />
-                <Route path="/reports" element={<Reports />} />
+            <Route element={<Layout />}>
+              {/* Public-demo pages — reachable without a session. Data
+                  safety comes from server-side masking on the underlying
+                  API responses when no valid session cookie is present
+                  (see shared/masking.py), NOT from blocking the route —
+                  a logged-in owner visiting these same routes still gets
+                  real, unmasked data via their session cookie. */}
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/journal" element={<Journal />} />
+              <Route path="/ledger" element={<Ledger />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+              {/* Everything else stays fully gated — redirects to /login
+                  if there's no valid session, exactly as before. */}
+              <Route element={<ProtectedRoute />}>
                 <Route path="/coa" element={<COA />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/budgets" element={<Budgets />} />
                 <Route path="/goals" element={<Goals />} />
                 <Route path="/recurring" element={<Recurring />} />
                 <Route path="/bills" element={<Bills />} />
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

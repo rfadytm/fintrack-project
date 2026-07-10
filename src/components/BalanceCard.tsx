@@ -5,7 +5,7 @@ import { AnimatedNumber } from "./ui/animated-number";
 
 interface BalanceCardProps {
   name: string;
-  balance: number;
+  balance: number | null;
   type: "aset" | "liabilitas";
 }
 

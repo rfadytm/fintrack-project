@@ -6,6 +6,8 @@ import { api } from "../utils/api";
 import { formatRupiah } from "../utils/formatRupiah";
 import { namaBulan } from "../utils/dateHelpers";
 import { exportRows } from "../utils/exportXlsx";
+import { useExportGuard } from "../hooks/useExportGuard";
+import { OwnerOnlyDialog } from "../components/OwnerOnlyDialog";
 import { Card, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -174,6 +176,7 @@ function IncomeStatement({ year, month }: { year: number; month: number }) {
     year,
     month,
   ]);
+  const { guard, dialogOpen, setDialogOpen } = useExportGuard();
   if (loading) return <Skeleton className="h-64" />;
   if (error) return <p className="text-red text-sm">{error}</p>;
   const d = data || {};
@@ -188,9 +191,9 @@ function IncomeStatement({ year, month }: { year: number; month: number }) {
         // sama sekali tidak punya baris "Pendapatan", langsung loncat ke Beban.
         // Sekarang selalu ada baris Total Pendapatan/Total Beban, sama seperti
         // yang ditampilkan di layar (komponen Section di bawah).
-        ...(d.revenue || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Pendapatan", Jumlah: r.amount })),
+        ...(d.revenue || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Pendapatan", Jumlah: r.amount ?? 0 })),
         { Kode: "", Akun: "Total Pendapatan", Tipe: "Pendapatan", Jumlah: d.total_revenue || 0 },
-        ...(d.expense || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Beban", Jumlah: r.amount })),
+        ...(d.expense || []).map((r) => ({ Kode: r.code, Akun: r.account_name, Tipe: "Beban", Jumlah: r.amount ?? 0 })),
         { Kode: "", Akun: "Total Beban", Tipe: "Beban", Jumlah: d.total_expense || 0 },
         { Kode: "", Akun: "NET LABA/RUGI", Tipe: "", Jumlah: d.net_income || 0 },
       ]
@@ -202,7 +205,7 @@ function IncomeStatement({ year, month }: { year: number; month: number }) {
         <CardTitle>
           Laba Rugi — {namaBulan(month)} {year}
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportIS}>
+        <Button variant="outline" size="sm" onClick={() => guard(exportIS)}>
           ⬇️ Export .xlsx
         </Button>
       </CardHeader>
@@ -211,6 +214,7 @@ function IncomeStatement({ year, month }: { year: number; month: number }) {
       <div className={`mt-4 font-bold text-lg ${(d.net_income || 0) >= 0 ? "text-green" : "text-red"}`}>
         Net {(d.net_income || 0) >= 0 ? "Laba" : "Rugi"}: {formatRupiah(d.net_income)}
       </div>
+      <OwnerOnlyDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </Card>
   );
 }
@@ -221,7 +225,7 @@ function Section({
   total,
 }: {
   title: string;
-  rows?: { code: string; account_name: string; amount: number }[];
+  rows?: { code: string; account_name: string; amount: number | null }[];
   total?: number | null;
 }) {
   return (
@@ -251,6 +255,7 @@ function TrialBalance({ year, month }: { year: number; month: number }) {
     year,
     month,
   ]);
+  const { guard, dialogOpen, setDialogOpen } = useExportGuard();
   if (loading) return <Skeleton className="h-64" />;
   if (error) return <p className="text-red text-sm">{error}</p>;
   const d = data || {};
@@ -283,7 +288,7 @@ function TrialBalance({ year, month }: { year: number; month: number }) {
         <CardTitle>
           Trial Balance s.d. {namaBulan(month)} {year}
         </CardTitle>
-        <Button variant="outline" size="sm" onClick={exportTB}>
+        <Button variant="outline" size="sm" onClick={() => guard(exportTB)}>
           ⬇️ Export .xlsx
         </Button>
       </CardHeader>
@@ -316,6 +321,7 @@ function TrialBalance({ year, month }: { year: number; month: number }) {
           </TableRow>
         </TableBody>
       </Table>
+      <OwnerOnlyDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </Card>
   );
 }

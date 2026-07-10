@@ -22,7 +22,8 @@ from http.server import BaseHTTPRequestHandler
 from shared import journal
 from shared.db import get_client
 from shared.format import today_wib
-from shared.http import get_query, paginate, read_json, require_auth, require_session, send_json
+from shared.http import get_query, paginate, read_json, require_auth, require_session, send_json, session_or_public
+from shared.masking import is_public, mask_row
 
 
 class handler(BaseHTTPRequestHandler):
@@ -55,8 +56,7 @@ class handler(BaseHTTPRequestHandler):
         send_json(self, 201, {"doc_number": doc})
 
     def do_GET(self):
-        if not require_session(self):
-            return
+        viewer = session_or_public(self)
         q = get_query(self)
         limit, offset = paginate(q)
         db = get_client()
@@ -65,7 +65,10 @@ class handler(BaseHTTPRequestHandler):
         if q.get("tag"):
             tag_row = db.table("tags").select("id").eq("name", q["tag"]).execute()
             if not tag_row.data:
-                return send_json(self, 200, {"transactions": [], "total": 0, "limit": limit, "offset": offset})
+                return send_json(
+                    self, 200,
+                    {"transactions": [], "total": 0, "limit": limit, "offset": offset, "viewer": viewer["via"]},
+                )
             tagged = (
                 db.table("transaction_tags")
                 .select("doc_number")
@@ -74,7 +77,10 @@ class handler(BaseHTTPRequestHandler):
             )
             doc_numbers_for_tag = [r["doc_number"] for r in tagged.data]
             if not doc_numbers_for_tag:
-                return send_json(self, 200, {"transactions": [], "total": 0, "limit": limit, "offset": offset})
+                return send_json(
+                    self, 200,
+                    {"transactions": [], "total": 0, "limit": limit, "offset": offset, "viewer": viewer["via"]},
+                )
 
         query = db.table("transactions").select(
             "*, journal_lines(line_order, account_code, debit_amount, credit_amount)",
@@ -96,13 +102,29 @@ class handler(BaseHTTPRequestHandler):
             .range(offset, offset + limit - 1)
             .execute()
         )
+        transactions = res.data
+        if is_public(viewer):
+            # journal_lines is nested inside each transaction row — mask
+            # debit_amount/credit_amount per line, not the transaction row
+            # itself (dates, doc_number, description stay visible).
+            transactions = [
+                {
+                    **t,
+                    "journal_lines": [
+                        mask_row(line, {"debit_amount", "credit_amount"})
+                        for line in (t.get("journal_lines") or [])
+                    ],
+                }
+                for t in transactions
+            ]
         send_json(
             self,
             200,
             {
-                "transactions": res.data,
+                "transactions": transactions,
                 "total": res.count,
                 "limit": limit,
                 "offset": offset,
+                "viewer": viewer["via"],
             },
         )

@@ -51,6 +51,24 @@ def require_session(handler) -> dict | None:
     return sess
 
 
+def session_or_public(handler) -> dict:
+    """Seperti require_session, tapi TIDAK PERNAH kirim 401 — dipakai khusus
+    endpoint GET yang boleh diliat publik dalam bentuk ter-mask (demo di
+    portfolio). Selalu return dict, tidak pernah None:
+      - session asli kalau cookie valid: {"via": "session", "uid": ..., "exp": ...}
+      - {"via": "public"} kalau tidak ada session valid
+
+    JANGAN pakai ini untuk endpoint POST/PUT/DELETE — mutasi data tetap
+    wajib require_session/require_auth yang menolak tegas dengan 401.
+    Caller WAJIB mask field sensitif sendiri saat via == "public"; helper
+    ini cuma menentukan mode, bukan melakukan masking-nya (lihat
+    shared/masking.py)."""
+    sess = current_session(handler)
+    if sess:
+        return {"via": "session", **sess}
+    return {"via": "public"}
+
+
 def require_auth(handler) -> dict | None:
     """Auth untuk endpoint yang boleh dipakai browser (cookie) ATAU project lain (X-API-Key).
 

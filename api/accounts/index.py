@@ -7,7 +7,7 @@ _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.
 from http.server import BaseHTTPRequestHandler
 
 from shared.db import get_client
-from shared.http import get_query, read_json, require_session, send_json
+from shared.http import get_query, read_json, require_session, send_json, session_or_public
 
 _VALID_TYPES = {"aset", "liabilitas", "ekuitas", "pendapatan", "beban"}
 _NORMAL_BALANCE = {
@@ -21,8 +21,11 @@ _NORMAL_BALANCE = {
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if not require_session(self):
-            return
+        # chart_of_accounts has no amount/balance column (pure structure:
+        # code, name, type, hierarchy) — safe to show publicly as-is, no
+        # masking needed. Relaxed from require_session to session_or_public
+        # so the portfolio's live-demo link can render the account list.
+        viewer = session_or_public(self)
         q = get_query(self)
         query = get_client().table("chart_of_accounts").select("*").eq("is_active", True)
         if q.get("type"):
@@ -30,7 +33,7 @@ class handler(BaseHTTPRequestHandler):
         if q.get("postable_only") == "true":
             query = query.eq("is_header", False)
         res = query.order("code").execute()
-        send_json(self, 200, {"accounts": res.data})
+        send_json(self, 200, {"accounts": res.data, "viewer": viewer["via"]})
 
     def do_POST(self):
         if not require_session(self):

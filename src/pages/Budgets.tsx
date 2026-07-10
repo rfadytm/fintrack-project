@@ -128,7 +128,9 @@ export default function Budgets() {
             </TableHeader>
             <TableBody>
               {budgetsQuery.data.budgets.map((b) => {
-                const pct = b.monthly_limit ? Math.min(Math.round((b.spent / b.monthly_limit) * 100), 999) : 0;
+                const pct = b.monthly_limit
+                  ? Math.min(Math.round(((b.spent ?? 0) / b.monthly_limit) * 100), 999)
+                  : 0;
                 const color = pct >= 100 ? "bg-red" : pct >= 80 ? "bg-amber-500" : "bg-green";
                 return (
                   <TableRow key={b.account_code}>

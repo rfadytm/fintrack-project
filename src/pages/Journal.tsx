@@ -12,6 +12,8 @@ import { exportCsv } from "../utils/exportCsv";
 import { exportJson } from "../utils/exportJson";
 import { exportPdf } from "../utils/exportPdf";
 import { formatTanggal } from "../utils/dateHelpers";
+import { useExportGuard } from "../hooks/useExportGuard";
+import { OwnerOnlyDialog } from "../components/OwnerOnlyDialog";
 
 const DOC_TYPES = ["OB", "KK", "KM", "TR", "JU", "RV"];
 
@@ -20,6 +22,7 @@ export default function Journal() {
   const [tag, setTag] = useState("");
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const { guard, dialogOpen, setDialogOpen } = useExportGuard();
   const limit = 25;
   const qs = `?limit=${limit}&offset=${page * limit}${type ? `&type=${type}` : ""}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}`;
   const { loading, transactions, total, error } = useTransactions(qs);
@@ -109,16 +112,16 @@ export default function Journal() {
             </option>
           ))}
         </Select>
-        <Button variant="outline" size="sm" onClick={() => handleExport("xlsx")} disabled={exporting}>
+        <Button variant="outline" size="sm" onClick={() => guard(() => handleExport("xlsx"))} disabled={exporting}>
           {exporting ? "…" : "⬇️ Excel"}
         </Button>
-        <Button variant="outline" size="sm" onClick={() => handleExport("csv")} disabled={exporting}>
+        <Button variant="outline" size="sm" onClick={() => guard(() => handleExport("csv"))} disabled={exporting}>
           ⬇️ CSV
         </Button>
-        <Button variant="outline" size="sm" onClick={() => handleExport("json")} disabled={exporting}>
+        <Button variant="outline" size="sm" onClick={() => guard(() => handleExport("json"))} disabled={exporting}>
           ⬇️ JSON
         </Button>
-        <Button variant="outline" size="sm" onClick={() => handleExport("pdf")} disabled={exporting}>
+        <Button variant="outline" size="sm" onClick={() => guard(() => handleExport("pdf"))} disabled={exporting}>
           ⬇️ PDF
         </Button>
       </div>
@@ -147,6 +150,7 @@ export default function Journal() {
           ▶️
         </Button>
       </div>
+      <OwnerOnlyDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   );
 }

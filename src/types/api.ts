@@ -45,7 +45,9 @@ export type Transaction = z.infer<typeof TransactionSchema>;
 export const BalanceRowSchema = z.object({
   code: z.string(),
   account_name: z.string(),
-  balance: z.number(),
+  // nullable: masked to null for unauthenticated public-demo viewers, see
+  // shared/masking.py — a real balance is never actually absent otherwise.
+  balance: z.number().nullable(),
 });
 export type BalanceRow = z.infer<typeof BalanceRowSchema>;
 
@@ -72,7 +74,9 @@ export type MonthlyReport = z.infer<typeof MonthlyReportSchema>;
 const IncomeStatementRowSchema = z.object({
   code: z.string(),
   account_name: z.string(),
-  amount: z.number(),
+  // nullable: masked to null for public-demo viewers (income-statement AND
+  // range reports both use this row shape) — see shared/masking.py.
+  amount: z.number().nullable(),
 });
 export const IncomeStatementSchema = z.object({
   revenue: z.array(IncomeStatementRowSchema).optional(),
@@ -123,8 +127,9 @@ export type SettingsFormValues = z.infer<typeof SettingsFormSchema>;
 export const BudgetSchema = z.object({
   account_code: z.string(),
   account_name: z.string().nullable().optional(),
-  monthly_limit: z.number(),
-  spent: z.number(),
+  // nullable: masked to null for public-demo viewers, see shared/masking.py.
+  monthly_limit: z.number().nullable(),
+  spent: z.number().nullable(),
   last_alert_at: z.string().nullable().optional(),
 });
 export type Budget = z.infer<typeof BudgetSchema>;
@@ -133,11 +138,12 @@ export const BudgetsResponseSchema = z.object({ budgets: z.array(BudgetSchema) }
 export const GoalSchema = z.object({
   id: z.number(),
   name: z.string(),
-  target_amount: z.number(),
+  // nullable: masked to null for public-demo viewers, see shared/masking.py.
+  target_amount: z.number().nullable(),
   account_code: z.string().nullable().optional(),
   target_date: z.string().nullable().optional(),
   is_active: z.boolean(),
-  current_amount: z.number(),
+  current_amount: z.number().nullable(),
 });
 export type Goal = z.infer<typeof GoalSchema>;
 export const GoalsResponseSchema = z.object({ goals: z.array(GoalSchema) });
@@ -185,16 +191,19 @@ export const RangeReportSchema = z.object({
   date_to: z.string(),
   revenue: z.array(IncomeStatementRowSchema).optional(),
   expense: z.array(IncomeStatementRowSchema).optional(),
-  total_revenue: z.number().optional(),
-  total_expense: z.number().optional(),
-  net_income: z.number().optional(),
+  // nullable: masked to null for public-demo viewers, see shared/masking.py.
+  total_revenue: z.number().nullable().optional(),
+  total_expense: z.number().nullable().optional(),
+  net_income: z.number().nullable().optional(),
 });
 export type RangeReport = z.infer<typeof RangeReportSchema>;
 
 const CategoryForecastSchema = z.object({
   code: z.string(),
   account_name: z.string().nullable().optional(),
-  history: z.array(z.number()),
+  // nullable elements: masked to null for public-demo viewers, see
+  // shared/masking.py mask_number_list().
+  history: z.array(z.number().nullable()),
   forecast: z.number().nullable().optional(),
 });
 // v3.1: forecast dipecah jadi 3 horizon dari model tren yang sama — makin
@@ -212,8 +221,10 @@ export type ForecastTier = z.infer<typeof ForecastTierSchema>;
 export const ForecastSchema = z.object({
   months: z.number(),
   real_months_available: z.number(),
-  income_history: z.array(z.number()),
-  expense_history: z.array(z.number()),
+  // nullable elements: masked to null for public-demo viewers, see
+  // shared/masking.py mask_number_list().
+  income_history: z.array(z.number().nullable()),
+  expense_history: z.array(z.number().nullable()),
   short_term: ForecastTierSchema,
   medium_term: ForecastTierSchema,
   long_term: ForecastTierSchema,

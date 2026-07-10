@@ -84,7 +84,7 @@ def test_report_ledger_running_balance_debit_normal_account():
         return coa_table if name == "chart_of_accounts" else lines_table
 
     client.table.side_effect = table_router
-    status, body = reports_index._report_ledger(client, {"account": "1110"})
+    status, body = reports_index._report_ledger(client, {"account": "1110"}, {"via": "session"})
     assert status == 200
     assert [r["running_balance"] for r in body["lines"]] == [100, 70]
 
@@ -114,7 +114,7 @@ def test_report_ledger_running_balance_credit_normal_account():
         return coa_table if name == "chart_of_accounts" else lines_table
 
     client.table.side_effect = table_router
-    status, body = reports_index._report_ledger(client, {"account": "2110"})
+    status, body = reports_index._report_ledger(client, {"account": "2110"}, {"via": "session"})
     assert status == 200
     assert [r["running_balance"] for r in body["lines"]] == [200, 150]
 
@@ -133,7 +133,7 @@ def test_report_ledger_selects_account_code():
         return coa_table if name == "chart_of_accounts" else lines_table
 
     client.table.side_effect = table_router
-    reports_index._report_ledger(client, {"account": "1110"})
+    reports_index._report_ledger(client, {"account": "1110"}, {"via": "session"})
     select_arg = lines_table.select.call_args[0][0]
     assert "account_code" in select_arg
 
@@ -178,7 +178,7 @@ def test_forecast_no_transactions_ever_returns_all_tiers_locked():
     tx_table = client.table("transactions")
     tx_table.execute.return_value.data = []  # belum ada transaksi sama sekali
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {})
+        status, body = reports_index._report_forecast(client, {}, {"via": "session"})
     assert status == 200
     assert body["real_months_available"] == 0
     assert body["short_term"]["income"] is None
@@ -194,7 +194,7 @@ def test_forecast_started_this_month_has_zero_complete_months():
     outlier). Sekarang harus eksplisit None (belum cukup data), bukan 0."""
     client = _forecast_client(2026, 7)
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {})
+        status, body = reports_index._report_forecast(client, {}, {"via": "session"})
     assert status == 200
     assert body["real_months_available"] == 0
     assert body["short_term"]["income"] is None
@@ -204,7 +204,7 @@ def test_forecast_one_complete_month_unlocks_short_term_only():
     # earliest = Juni 2026, "hari ini" = 9 Juli 2026 -> bulan lengkap: Juni saja.
     client = _forecast_client(2026, 6)
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {})
+        status, body = reports_index._report_forecast(client, {}, {"via": "session"})
     assert status == 200
     assert body["real_months_available"] == 1
     assert body["short_term"]["income"] is not None
@@ -216,7 +216,7 @@ def test_forecast_two_complete_months_unlocks_medium_term():
     # earliest = Mei 2026 -> bulan lengkap: Mei, Juni.
     client = _forecast_client(2026, 5)
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {})
+        status, body = reports_index._report_forecast(client, {}, {"via": "session"})
     assert body["real_months_available"] == 2
     assert body["short_term"]["income"] is not None
     assert body["medium_term"]["income"] is not None
@@ -227,7 +227,7 @@ def test_forecast_three_complete_months_unlocks_long_term():
     # earliest = Apr 2026 -> bulan lengkap: Apr, Mei, Juni.
     client = _forecast_client(2026, 4)
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {})
+        status, body = reports_index._report_forecast(client, {}, {"via": "session"})
     assert body["real_months_available"] == 3
     assert body["short_term"]["income"] is not None
     assert body["medium_term"]["income"] is not None
@@ -241,6 +241,6 @@ def test_forecast_window_never_pads_before_real_start():
     # earliest = Jun 2026 (1 bulan lengkap: Juni), diminta months=6 (default).
     client = _forecast_client(2026, 6)
     with patch.object(reports_index, "today_wib", return_value=date(2026, 7, 9)):
-        status, body = reports_index._report_forecast(client, {"months": "6"})
+        status, body = reports_index._report_forecast(client, {"months": "6"}, {"via": "session"})
     assert body["months"] == 1  # bukan 6 — dipangkas ke jumlah bulan asli yang tersedia
     assert len(body["income_history"]) == 1

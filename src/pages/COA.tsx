@@ -18,7 +18,10 @@ export default function COA() {
   const balanceQuery = useQuery({ queryKey: ["balance", ""], queryFn: () => api.balance() });
 
   const accounts = accountsQuery.data?.accounts || [];
-  const balances: Record<string, number> = {};
+  // number | null: balance is masked to null for unauthenticated public-demo
+  // viewers (see shared/masking.py) — the `balances[a.code] ?` truthy check
+  // below already treats null the same as "no balance to show".
+  const balances: Record<string, number | null> = {};
   (balanceQuery.data?.balances || []).forEach((x) => (balances[x.code] = x.balance));
 
   const error = accountsQuery.error || balanceQuery.error;

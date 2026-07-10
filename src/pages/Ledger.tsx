@@ -5,6 +5,8 @@ import { api } from "../utils/api";
 import { formatRupiah } from "../utils/formatRupiah";
 import { formatTanggal } from "../utils/dateHelpers";
 import { exportRows, stamp } from "../utils/exportXlsx";
+import { useExportGuard } from "../hooks/useExportGuard";
+import { OwnerOnlyDialog } from "../components/OwnerOnlyDialog";
 import { Select } from "../components/ui/select";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
@@ -25,6 +27,7 @@ const CLASSES: [string, string][] = [
 export default function Ledger() {
   const { period } = useApp();
   const [account, setAccount] = useState("1120");
+  const { guard, dialogOpen, setDialogOpen } = useExportGuard();
 
   const accountsQuery = useQuery({
     queryKey: ["accounts", "?postable_only=true"],
@@ -38,6 +41,20 @@ export default function Ledger() {
     enabled: !!account,
   });
   const lines = ledgerQuery.data?.lines || [];
+
+  const exportLedger = () =>
+    exportRows(
+      `fintrack_bukubesar_${account}_${stamp()}.xlsx`,
+      `Akun ${account}`,
+      lines.map((l) => ({
+        Tanggal: formatTanggal(l.transactions?.transaction_date),
+        Dokumen: l.transactions?.doc_number || "",
+        Keterangan: l.transactions?.description || "",
+        Debit: l.debit_amount || 0,
+        Kredit: l.credit_amount || 0,
+        Saldo: l.running_balance || 0,
+      }))
+    );
 
   return (
     <div className="space-y-4">
@@ -71,25 +88,7 @@ export default function Ledger() {
         <span className="text-muted text-sm">
           Akun aktif: <b className="text-navy">{account}</b>
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!lines.length}
-          onClick={() =>
-            exportRows(
-              `fintrack_bukubesar_${account}_${stamp()}.xlsx`,
-              `Akun ${account}`,
-              lines.map((l) => ({
-                Tanggal: formatTanggal(l.transactions?.transaction_date),
-                Dokumen: l.transactions?.doc_number || "",
-                Keterangan: l.transactions?.description || "",
-                Debit: l.debit_amount || 0,
-                Kredit: l.credit_amount || 0,
-                Saldo: l.running_balance || 0,
-              }))
-            )
-          }
-        >
+        <Button variant="outline" size="sm" disabled={!lines.length} onClick={() => guard(exportLedger)}>
           ⬇️ Export .xlsx
         </Button>
       </div>
@@ -128,6 +127,7 @@ export default function Ledger() {
           </TableBody>
         </Table>
       )}
+      <OwnerOnlyDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </div>
   );
 }

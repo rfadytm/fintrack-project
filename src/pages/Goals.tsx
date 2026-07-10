@@ -116,7 +116,9 @@ export default function Goals() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {goalsQuery.data.goals.map((g) => {
-            const pct = g.target_amount ? Math.min(Math.round((g.current_amount / g.target_amount) * 100), 100) : 0;
+            const pct = g.target_amount
+              ? Math.min(Math.round(((g.current_amount ?? 0) / g.target_amount) * 100), 100)
+              : 0;
             return (
               <Card key={g.id}>
                 <div className="flex items-center justify-between gap-2">

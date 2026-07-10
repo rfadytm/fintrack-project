@@ -22,16 +22,20 @@ from http.server import BaseHTTPRequestHandler
 from shared.db import get_client
 from shared.format import today_wib
 from shared.forecast import holt_forecast, linear_forecast
-from shared.http import get_query, paginate, require_session, send_json
+from shared.http import get_query, paginate, require_session, send_json, session_or_public
+from shared.masking import is_public, mask_amount, mask_number_list, mask_row, mask_rows
 from shared.reports import month_totals, month_totals_from_rows
 
 
-def _report_balance(db, q):
+def _report_balance(db, q, viewer):
     query = db.table("account_balances").select("*")
     if q.get("type"):
         query = query.eq("account_type", q["type"])
     res = query.order("code").execute()
-    return 200, {"balances": res.data}
+    balances = res.data
+    if is_public(viewer):
+        balances = mask_rows(balances, {"total_debit", "total_credit", "balance"})
+    return 200, {"balances": balances}
 
 
 def _opening_balance(db, year, month):
@@ -57,7 +61,7 @@ def _opening_balance(db, year, month):
     return total or None
 
 
-def _report_monthly(db, q):
+def _report_monthly(db, q, viewer):
     if not q.get("year") or not q.get("month"):
         return 400, {"error": "year & month wajib"}
     year, month = int(q["year"]), int(q["month"])
@@ -65,19 +69,31 @@ def _report_monthly(db, q):
         db.table("monthly_summary").select("*").eq("period_year", year).eq("period_month", month).execute()
     )
     income, expense = month_totals_from_rows(summary.data)
+    by_type = summary.data
+    net = income - expense
+    opening_balance = _opening_balance(db, year, month)
+    # savings_rate sengaja TIDAK di-mask — rasio/persentase, bukan angka
+    # rupiah absolut, jadi tetap informatif buat demo publik tanpa
+    # membocorkan nominal (lihat diskusi masking di doc.txt).
+    savings_rate = round((income - expense) / income, 4) if income > 0 else None
+    if is_public(viewer):
+        income, expense, net, opening_balance = (
+            mask_amount(income), mask_amount(expense), mask_amount(net), mask_amount(opening_balance)
+        )
+        by_type = mask_rows(by_type, {"total_debit", "total_credit"})
     return 200, {
         "year": year,
         "month": month,
         "income": income,
         "expense": expense,
-        "net": income - expense,
-        "opening_balance": _opening_balance(db, year, month),
-        "savings_rate": round((income - expense) / income, 4) if income > 0 else None,
-        "by_type": summary.data,
+        "net": net,
+        "opening_balance": opening_balance,
+        "savings_rate": savings_rate,
+        "by_type": by_type,
     }
 
 
-def _report_ledger(db, q):
+def _report_ledger(db, q, viewer):
     account = q.get("account")
     if not account:
         return 400, {"error": "account wajib"}
@@ -111,10 +127,12 @@ def _report_ledger(db, q):
         delta = r["debit_amount"] - r["credit_amount"]
         running += delta if normal_balance == "debit" else -delta
         r["running_balance"] = running
+    if is_public(viewer):
+        rows = mask_rows(rows, {"debit_amount", "credit_amount", "running_balance"})
     return 200, {"account": account, "lines": rows, "total": res.count}
 
 
-def _report_trial_balance(db, q):
+def _report_trial_balance(db, q, viewer):
     if not q.get("year") or not q.get("month"):
         return 400, {"error": "year & month wajib"}
     year, month = int(q["year"]), int(q["month"])
@@ -122,17 +140,22 @@ def _report_trial_balance(db, q):
     rows = res.data or []
     total_debit = sum(r["total_debit"] for r in rows)
     total_credit = sum(r["total_credit"] for r in rows)
+    balanced = total_debit == total_credit
+    accounts = rows
+    if is_public(viewer):
+        accounts = mask_rows(rows, {"total_debit", "total_credit"})
+        total_debit, total_credit = mask_amount(total_debit), mask_amount(total_credit)
     return 200, {
         "year": year,
         "month": month,
-        "accounts": rows,
+        "accounts": accounts,
         "total_debit": total_debit,
         "total_credit": total_credit,
-        "balanced": total_debit == total_credit,
+        "balanced": balanced,
     }
 
 
-def _report_income_statement(db, q):
+def _report_income_statement(db, q, viewer):
     if not q.get("year") or not q.get("month"):
         return 400, {"error": "year & month wajib"}
     year, month = int(q["year"]), int(q["month"])
@@ -142,6 +165,11 @@ def _report_income_statement(db, q):
     expense = [r for r in rows if r["account_type"] == "beban"]
     total_rev = sum(r["amount"] for r in revenue)
     total_exp = sum(r["amount"] for r in expense)
+    net_income = total_rev - total_exp
+    if is_public(viewer):
+        revenue = mask_rows(revenue, {"amount"})
+        expense = mask_rows(expense, {"amount"})
+        total_rev, total_exp, net_income = mask_amount(total_rev), mask_amount(total_exp), mask_amount(net_income)
     return 200, {
         "year": year,
         "month": month,
@@ -149,11 +177,11 @@ def _report_income_statement(db, q):
         "expense": expense,
         "total_revenue": total_rev,
         "total_expense": total_exp,
-        "net_income": total_rev - total_exp,
+        "net_income": net_income,
     }
 
 
-def _report_range(db, q):
+def _report_range(db, q, viewer):
     raw_from, raw_to = q.get("date_from"), q.get("date_to")
     if not raw_from or not raw_to:
         return 400, {"error": "date_from & date_to (YYYY-MM-DD) wajib"}
@@ -195,6 +223,13 @@ def _report_range(db, q):
     expense = [r for r in by_account.values() if r["account_type"] == "beban"]
     total_revenue = sum(r["amount"] for r in revenue)
     total_expense = sum(r["amount"] for r in expense)
+    net_income = total_revenue - total_expense
+    if is_public(viewer):
+        revenue = mask_rows(revenue, {"amount"})
+        expense = mask_rows(expense, {"amount"})
+        total_revenue, total_expense, net_income = (
+            mask_amount(total_revenue), mask_amount(total_expense), mask_amount(net_income)
+        )
     return 200, {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
@@ -202,7 +237,7 @@ def _report_range(db, q):
         "expense": expense,
         "total_revenue": total_revenue,
         "total_expense": total_expense,
-        "net_income": total_revenue - total_expense,
+        "net_income": net_income,
     }
 
 
@@ -260,7 +295,7 @@ def _months_between(y1, m1, y2, m2):
     return (y2 * 12 + m2) - (y1 * 12 + m1) + 1
 
 
-def _report_forecast(db, q):
+def _report_forecast(db, q, viewer):
     try:
         max_months = min(max(int(q.get("months", 6)), 2), 12)
     except ValueError:
@@ -350,14 +385,28 @@ def _report_forecast(db, q):
             "expense": sum(holt_forecast(expense_hist, steps)),
         }
 
+    income_history, expense_history = income_hist, expense_hist
+    short_term = _sum_tier(1, 1, "1 bulan")
+    medium_term = _sum_tier(3, 2, "1 kuartal (3 bulan)")
+    long_term = _sum_tier(12, 3, "1 tahun (12 bulan)")
+    if is_public(viewer):
+        income_history = mask_number_list(income_history)
+        expense_history = mask_number_list(expense_history)
+        short_term = {**short_term, "income": mask_amount(short_term["income"]), "expense": mask_amount(short_term["expense"])}
+        medium_term = {**medium_term, "income": mask_amount(medium_term["income"]), "expense": mask_amount(medium_term["expense"])}
+        long_term = {**long_term, "income": mask_amount(long_term["income"]), "expense": mask_amount(long_term["expense"])}
+        top_categories = [
+            {**c, "history": mask_number_list(c["history"]), "forecast": mask_amount(c["forecast"])}
+            for c in top_categories
+        ]
     return 200, {
         "months": window,
         "real_months_available": real_available,
-        "income_history": income_hist,
-        "expense_history": expense_hist,
-        "short_term": _sum_tier(1, 1, "1 bulan"),
-        "medium_term": _sum_tier(3, 2, "1 kuartal (3 bulan)"),
-        "long_term": _sum_tier(12, 3, "1 tahun (12 bulan)"),
+        "income_history": income_history,
+        "expense_history": expense_history,
+        "short_term": short_term,
+        "medium_term": medium_term,
+        "long_term": long_term,
         "top_categories": top_categories,
     }
 
@@ -375,12 +424,13 @@ _REPORTS = {
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if not require_session(self):
-            return
+        viewer = session_or_public(self)
         q = get_query(self)
         name = q.get("report")
         fn = _REPORTS.get(name)
         if not fn:
             return send_json(self, 400, {"error": f"report tidak dikenal: {name!r}. Pilihan: {sorted(_REPORTS)}"})
-        status, body = fn(get_client(), q)
+        status, body = fn(get_client(), q, viewer)
+        if status == 200:
+            body["viewer"] = viewer["via"]
         send_json(self, status, body)

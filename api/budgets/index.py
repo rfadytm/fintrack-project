@@ -18,7 +18,8 @@ from http.server import BaseHTTPRequestHandler
 
 from shared.db import get_client
 from shared.format import today_wib
-from shared.http import get_query, read_json, require_session, send_json
+from shared.http import get_query, read_json, require_session, send_json, session_or_public
+from shared.masking import is_public, mask_rows
 
 
 def _month_spend(db, account_code, year, month):
@@ -34,7 +35,7 @@ def _month_spend(db, account_code, year, month):
     return sum(r["debit_amount"] or 0 for r in res.data)
 
 
-def _get_budgets(db):
+def _get_budgets(db, viewer):
     res = (
         db.table("budgets")
         .select("account_code, monthly_limit, last_alert_at, chart_of_accounts(account_name)")
@@ -53,6 +54,8 @@ def _get_budgets(db):
                 "last_alert_at": row["last_alert_at"],
             }
         )
+    if is_public(viewer):
+        budgets = mask_rows(budgets, {"monthly_limit", "spent"})
     return 200, {"budgets": budgets}
 
 
@@ -76,7 +79,7 @@ def _delete_budget(db, q):
     return 200, {"ok": True}
 
 
-def _get_goals(db):
+def _get_goals(db, viewer):
     res = db.table("goals").select("*").eq("is_active", True).execute()
     goals = []
     for g in res.data:
@@ -85,6 +88,8 @@ def _get_goals(db):
             bal = db.table("account_balances").select("balance").eq("code", g["account_code"]).execute()
             current = bal.data[0]["balance"] if bal.data else 0
         goals.append({**g, "current_amount": current})
+    if is_public(viewer):
+        goals = mask_rows(goals, {"target_amount", "current_amount"})
     return 200, {"goals": goals}
 
 
@@ -115,14 +120,15 @@ def _delete_goal(db, q):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if not require_session(self):
-            return
+        viewer = session_or_public(self)
         q = get_query(self)
         db = get_client()
         if q.get("resource") == "goal":
-            status, body = _get_goals(db)
+            status, body = _get_goals(db, viewer)
         else:
-            status, body = _get_budgets(db)
+            status, body = _get_budgets(db, viewer)
+        if status == 200:
+            body["viewer"] = viewer["via"]
         send_json(self, status, body)
 
     def do_POST(self):

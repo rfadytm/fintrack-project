@@ -19,7 +19,7 @@ COA
 Akun Bank
 BNI (Kas Besar) | SeaBank (Imprest Rp500rb) | Bank Tabungan TBD
 Tanggal
-v1: 15 Juni 2026 — terakhir diperbarui: 2026-07-09
+v1: 15 Juni 2026 — terakhir diperbarui: 2026-07-10
 1. PROJECT OVERVIEW
 1.1 Deskripsi
 FinTrack adalah sistem akuntansi keuangan personal berbasis double-entry bookkeeping, dibangun dengan arsitektur cloud-first menggunakan Vercel (serverless) + Supabase (PostgreSQL) + Telegram Bot sebagai primary input interface. Sistem dirancang scalable — COA, workflow, dan schema sudah production-ready sehingga bisa dijadikan template UMKM atau PT tanpa rebuild.
@@ -1731,3 +1731,79 @@ sekali, mulai bulan ini juga (0 bulan lengkap), 1/2/3 bulan lengkap membuka
 tier berikutnya satu per satu, dan window tidak pernah mundur ke sebelum
 mulai pakai walau `months` diminta lebih besar. Total pytest 86 → 97. tsc,
 42 Vitest, build, 14 Playwright e2e semua hijau.
+
+9.15 Public-demo masking — tombol "Live Demo" di fintrack-portfolio bisa
+diakses tanpa membocorkan angka (2026-07-10)
+Konteks: fintrack-portfolio (project portfolio karier terpisah, lihat
+developer.txt §9 project ini buat hubungan detailnya) punya halaman case
+study yang nge-link LANGSUNG ke deployment app ini sebagai "Live Demo".
+User keberatan: siapapun yang klik link itu berpotensi liat saldo/total
+uang ASLI. Didiskusikan beberapa opsi (screenshot-only, akun demo data
+palsu, masking) — dipilih masking: visitor tanpa login tetap liat
+dashboard yang BENERAN hidup (struktur asli, transaksi asli mengalir),
+tapi semua angka disamarkan.
+
+Percobaan pertama pakai string sentinel ("***") ketahuan salah SEBELUM
+di-deploy: Dashboard.tsx's TimelineSection ngelakuin aritmatika beneran
+di atas debit_amount (`byDay[day] += amt`, `amt > LARGE_EXPENSE_THRESHOLD`)
+buat grafik akumulasi pengeluaran harian — string bakal lolos ke situ dan
+merusak data secara diam-diam (mis. `0 + "***"` di JS jadi concat string,
+bukan error yang kelihatan). Diganti total ke `None` sebagai representasi
+mask, karena app ini SUDAH punya pola `value ?? 0` / `value || 0` di
+mana-mana buat state "belum ada data" — masking lewat None otomatis lewat
+jalur yang sudah teruji itu, bukan tipe baru yang belum pernah ditangani
+di manapun.
+
+Implementasi:
+1. shared/http.py: session_or_public(handler) — seperti require_session
+   tapi TIDAK PERNAH 401, return {"via": "public"} kalau tidak ada
+   session valid. Endpoint mutasi (POST/PUT/DELETE) TIDAK diubah, tetap
+   require_session — publik cuma boleh baca.
+2. shared/masking.py (baru): mask_amount, mask_number_list, mask_row,
+   mask_rows — mengganti nilai field secara eksplisit per endpoint,
+   BUKAN lewat penelusuran generik/rekursif struktur data (biar gampang
+   diaudit satu-satu, tidak ada kasus tepi tersembunyi).
+3. Diterapkan ke GET api/accounts (ternyata tidak ada kolom
+   balance/amount di chart_of_accounts — aman tanpa masking sama
+   sekali), api/budgets (resource=budget & resource=goal), api/
+   transactions (journal_lines bersarang di dalam tiap baris), api/
+   reports (ketujuh jenis laporan: balance, monthly, ledger,
+   trial-balance, income-statement, range, forecast — savings_rate
+   SENGAJA tidak di-mask karena rasio, bukan nominal absolut).
+4. src/types/api.ts: schema Zod field yang di-mask diubah `.nullable()`
+   — PERSIS yang di-mask di backend, tidak lebih tidak kurang.
+5. npm run typecheck menemukan SEMUA konsumen yang butuh diperbaiki
+   begitu field itu nullable — Dashboard.tsx (BalanceCard, CategoryChart
+   props), Budgets.tsx, Goals.tsx (pembagian `a / b` butuh `?? 0`
+   eksplisit), COA.tsx, Reports.tsx (Section component + baris export
+   xlsx), animated-number.tsx (Number.isFinite tidak menyempitkan tipe
+   `number | null` tanpa `typeof value === "number"` eksplisit).
+6. useExportGuard.ts + OwnerOnlyDialog.tsx (baru): tombol export (xlsx/
+   csv/json/pdf, 7 titik di Reports/Journal/Ledger) nampilin dialog
+   "hanya pemilik" buat viewer publik — BUKAN lapisan keamanan (datanya
+   sudah aman lewat langkah 1-3), cuma karena tidak ada gunanya download
+   file isinya kosong semua.
+7. BLINDSPOT KRITIS ketemu pas verifikasi browser sungguhan: App.tsx
+   membungkus SEMUA route (termasuk Dashboard/Journal/Ledger/Reports) di
+   dalam ProtectedRoute, yang redirect ke /login kalau belum login —
+   artinya seluruh pekerjaan masking di atas TIDAK PERNAH kepake, karena
+   visitor publik tidak pernah sampai ke halamannya sama sekali. Route
+   Dashboard/Journal/Ledger/Reports dipindah keluar dari ProtectedRoute;
+   COA/Settings/Budgets/Goals/Recurring/Bills tetap di dalamnya (tidak
+   berubah). Keamanan datanya tetap di backend (cookie session), bukan
+   di gerbang route — owner yang login di route yang sama tetap dapat
+   data asli lewat cookie-nya.
+
+Testing: tests/test_reports.py — 9 pemanggilan _report_ledger/
+_report_forecast yang lama pecah karena parameter `viewer` baru wajib
+(TypeError), diperbaiki dengan `{"via": "session"}` eksplisit di test
+yang emang nguji nilai ASLI (bukan masking). tests/test_masking.py (baru)
+— 13 test: primitif masking + integrasi tiap jenis laporan (publik vs
+owner). src/hooks/useExportGuard.test.tsx (baru) — 2 test. Diverifikasi
+juga di browser sungguhan (Playwright, read-only, tanpa mutasi) bahwa
+Dashboard/Journal/Ledger/Reports bisa diakses tanpa session (tidak
+redirect), Settings/Budgets tetap redirect ke /login, dan tidak ada
+console error/NaN/undefined yang bocor ke layar. Total pytest 97 → 111
+(+2 pre-existing kegagalan tests/test_db.py butuh koneksi Supabase
+sungguhan, tidak berubah dari sebelumnya). Vitest 42 → 44. tsc, build
+semua hijau.

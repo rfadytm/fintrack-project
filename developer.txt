@@ -1,0 +1,514 @@
+PANDUAN DEVELOPER — FINTRACK
+Untuk Rafi, yang vibe-coding dan mau beneran ngerti apa yang jalan
+
+================================================================================
+0. CARA PAKAI DOKUMEN INI
+================================================================================
+Ini dokumen belajar khusus buat project FinTrack ini — sistem akuntansi
+personal yang beneran lu pake buat catat keuangan sehari-hari. Ini BUKAN
+dokumen portfolio (itu ada di project terpisah, fintrack-portfolio/
+developer.txt) — lihat Bagian 9 di bawah buat hubungan antara dua project
+itu kalau lu bingung kenapa ada dua "developer.txt".
+
+Setiap bagian jelasin APA teknologinya, KENAPA dipake di sini, dan GIMANA
+cara kerjanya di codebase INI secara spesifik.
+
+DAFTAR ISI
+1.  Gambaran Besar — FinTrack Itu Apa
+2.  Arsitektur: Kenapa Vite + Vercel Python + Supabase
+3.  Konsep Akuntansi yang Dipakai di Kode Ini
+4.  Frontend Deep Dive
+    4.1  Struktur Halaman & Routing
+    4.2  Autentikasi: Magic Link, Bukan Password
+    4.3  State & Data Fetching
+    4.4  File-by-File Walkthrough
+5.  Backend Deep Dive
+    5.1  Kenapa "Serverless Function per File", Bukan Satu App Besar
+    5.2  Auth HMAC — Gimana Cara Kerjanya
+    5.3  File-by-File Walkthrough
+6.  Database Deep Dive
+    6.1  Skema Inti & Double-Entry
+    6.2  Row Level Security & Kenapa Backend Pakai Service Key
+7.  Fitur Public-Demo Masking (Ditambahkan Juli 2026)
+    7.1  Kenapa Fitur Ini Ada
+    7.2  Cara Kerjanya
+    7.3  Yang HARUS Diinget Kalau Nambah Fitur Baru
+8.  Kerja Sehari-hari
+    8.1  Jalanin Semuanya di Lokal
+    8.2  Testing
+    8.3  Deploy
+9.  Hubungan dengan Project fintrack-portfolio
+10. Glosarium
+
+================================================================================
+1. GAMBARAN BESAR — FINTRACK ITU APA
+================================================================================
+FinTrack adalah sistem akuntansi personal double-entry (debit-kredit,
+bukan cuma catat pemasukan/pengeluaran biasa) yang lu pake buat catat
+keuangan asli lu. Tiga bagian utama:
+
+  - Telegram Bot — cara lu INPUT transaksi (chat biasa ke bot)
+  - Dashboard React (yang ada di repo ini) — cara lu LIAT hasilnya
+    (saldo, laporan, grafik)
+  - Supabase (Postgres) — tempat semua data BENERAN disimpen
+
+Ini bukan proyek portfolio/demo — ini alat yang beneran lu pake, dengan
+data uang beneran di dalamnya. Perlakuan terhadap kode di sini harus
+lebih hati-hati dibanding project percobaan, karena bug di sini bisa
+langsung mengganggu pembukuan asli lu.
+
+================================================================================
+2. ARSITEKTUR: KENAPA VITE + VERCEL PYTHON + SUPABASE
+================================================================================
+  Frontend: Vite + React + TypeScript (BUKAN Next.js — beda dari project
+  portfolio lu yang lain, lihat Bagian 9)
+  Backend: Python murni, satu file = satu Vercel Serverless Function
+  (BUKAN framework kayak FastAPI/Flask — lihat 5.1 kenapa)
+  Database: Supabase (Postgres + Row Level Security + Auth)
+  Hosting: Vercel, satu domain buat frontend DAN backend sekaligus
+  (jadi tidak ada masalah CORS — browser mikir semuanya satu server)
+
+Alur data:
+  Telegram ──▶ /api/telegram/webhook (Python) ──▶ Supabase
+  Browser  ──▶ /api/* (Python)                ──▶ Supabase ──▶ React SPA
+
+Kenapa frontend & backend di-deploy ke SATU domain Vercel (bukan dua
+domain terpisah): supaya cookie session (httpOnly, lihat 4.2) bisa
+langsung dipake browser tanpa ribet CORS/SameSite. Folder `src/` (React)
+dan `api/`+`shared/` (Python) hidup di repo yang sama tapi dua "dunia"
+runtime yang beda — Vercel yang ngurus routing `/api/*` ke Python,
+sisanya ke file statis hasil build Vite.
+
+================================================================================
+3. KONSEP AKUNTANSI YANG DIPAKAI DI KODE INI
+================================================================================
+Kalau lu belum familiar sama istilah akuntansi yang muncul di kode,
+ini penjelasan singkatnya (karena kode ini nganggep lu udah paham):
+
+  Double-entry — setiap transaksi punya MINIMAL dua baris: satu didebit,
+  satu dikredit, dan totalnya harus SAMA. Ini yang bikin sistem "self-
+  checking" — kalau ada bug, biasanya ketahuan karena debit ≠ kredit.
+
+  Chart of Accounts (COA) — daftar semua "kategori" uang lu (Kas, Utang,
+  Modal, Pendapatan, Beban, dst), masing-masing punya kode (mis. "1110" =
+  Kas) dan `normal_balance` (debit atau kredit — nentuin arah mana yang
+  bikin saldo NAIK).
+
+  Trial Balance — laporan yang jumlahin semua debit dan semua kredit di
+  seluruh akun; kalau totalnya beda, ada yang salah di suatu tempat.
+
+  Journal / Jurnal — catatan transaksi mentah, urut waktu. Ledger/Buku
+  Besar — catatan yang sama tapi dikelompokkan PER AKUN, dengan saldo
+  berjalan (running balance).
+
+  Income Statement / Laba Rugi — ringkasan Pendapatan dikurangi Beban
+  buat satu periode, hasilnya Net Income (laba) atau Net Loss (rugi).
+
+Kode di db/01_schema.sql dan shared/journal.py menerapkan aturan-aturan
+ini secara struktural — mis. constraint database yang MEMAKSA setiap
+baris jurnal punya debit ATAU kredit (bukan dua-duanya), dan RPC
+`post_document` yang menolak transaksi kalau totalnya gak balance.
+
+================================================================================
+4. FRONTEND DEEP DIVE
+================================================================================
+
+--------------------------------------------------------------------------------
+4.1 STRUKTUR HALAMAN & ROUTING
+--------------------------------------------------------------------------------
+src/App.tsx pake react-router-dom. Ada dua kelompok halaman:
+
+  Publik-dengan-masking (bisa diakses TANPA login, tapi angka
+  disamarkan — lihat Bagian 7): /dashboard, /journal, /ledger, /reports
+
+  Wajib login (redirect ke /login kalau belum login):
+  /coa, /settings, /budgets, /goals, /recurring, /bills
+
+src/components/ProtectedRoute.tsx yang nge-gate kelompok kedua — dia
+ngecek `useAuth()`, dan kalau belum login, `<Navigate to="/login" />`.
+Kelompok pertama SENGAJA gak dibungkus komponen itu (ditambahkan Juli
+2026 — lihat Bagian 7.2 kenapa).
+
+--------------------------------------------------------------------------------
+4.2 AUTENTIKASI: MAGIC LINK, BUKAN PASSWORD
+--------------------------------------------------------------------------------
+Gak ada form "masukkan password" di app ini. Cara login:
+  1. Chat bot Telegram, command tertentu (lihat api/telegram/ handler-nya)
+     buat generate magic link — token sekali-pakai, kadaluarsa 60 menit
+  2. Buka link itu di browser → src/pages/AuthCallback.tsx verifikasi
+     token ke backend
+  3. Backend bikin session cookie (httpOnly, Secure, SameSite=Strict,
+     berlaku 30 hari) — INI yang bikin lu tetep login walau tab
+     ditutup/dibuka lagi, beda dari token magic link yang cuma buat SEKALI
+     proses login itu sendiri
+  4. Semua request API selanjutnya otomatis bawa cookie ini (browser yang
+     ngurus, gak perlu ditulis manual di kode fetch)
+
+Kenapa gak dibuatin form login/password biasa: bot Telegram udah jadi
+"identitas" lu (cuma lu yang bisa chat bot itu buat generate magic link),
+jadi nambah password itu lapisan tambahan yang gak perlu — dan malah
+nambah risiko (password bisa lupa/bocor, magic link dari bot lebih susah
+dipalsuin orang lain karena butuh akses ke akun Telegram lu).
+
+--------------------------------------------------------------------------------
+4.3 STATE & DATA FETCHING
+--------------------------------------------------------------------------------
+Pake @tanstack/react-query buat semua fetch data dari backend — bukan
+useState+useEffect manual. Keuntungannya: caching otomatis (dua komponen
+minta data yang sama gak double-fetch), refetch otomatis kalau data
+"stale", dan state loading/error udah disediain tanpa nulis ulang tiap
+komponen.
+
+src/hooks/useAuth.ts, useReports.ts, useTransactions.ts adalah custom
+hook yang ngebungkus react-query buat kebutuhan spesifik app ini — kalau
+nambah endpoint baru yang butuh di-fetch di banyak tempat, bikin hook
+serupa di sini, jangan panggil react-query langsung di tiap halaman.
+
+Validasi runtime: src/types/api.ts pake Zod buat mastiin response API
+BENERAN sesuai bentuk yang diharapkan (bukan cuma percaya TypeScript,
+yang cuma ngecek pas compile-time, gak ngecek data asli yang beneran
+dikirim server). Kalau backend berubah bentuk response-nya, edit
+schema di sini JUGA, bukan cuma di Python-nya — kalau enggak, Zod bakal
+nolak response valid sekalipun dan user liat error "format tidak
+sesuai".
+
+--------------------------------------------------------------------------------
+4.4 FILE-BY-FILE WALKTHROUGH
+--------------------------------------------------------------------------------
+src/
+├── App.tsx               Route tree + layout wrapper (Navbar, background).
+├── pages/                Satu file per halaman (Dashboard, Journal,
+│                         Ledger, Reports, COA, Settings, Budgets, Goals,
+│                         Recurring, Bills, Login, AuthCallback).
+├── components/            Reusable: BalanceCard, CategoryChart,
+│   │                     TimelineChart, TransactionTable, Navbar,
+│   │                     ProtectedRoute, OwnerOnlyDialog (baru, Bagian 7).
+│   └── ui/                 Komponen dasar (Button, Card, Dialog, Table,
+│                         dst) — kemungkinan besar berbasis shadcn/Radix.
+├── hooks/                 useAuth, useReports, useTransactions,
+│                         useExportGuard (baru, Bagian 7).
+├── context/AppContext.tsx  State global ringan (periode bulan/tahun
+│                         yang lagi dipilih di dashboard).
+├── utils/                  formatRupiah, dateHelpers, exportXlsx/Csv/
+│                         Json/Pdf, api.ts (semua pemanggilan fetch ke
+│                         /api/* dikumpulin di sini).
+└── types/api.ts             Schema Zod + tipe TypeScript buat semua
+                            bentuk response API.
+
+================================================================================
+5. BACKEND DEEP DIVE
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 KENAPA "SERVERLESS FUNCTION PER FILE", BUKAN SATU APP BESAR
+--------------------------------------------------------------------------------
+Beda total dari pola FastAPI/Django yang biasa: di sini, SETIAP file di
+`api/` adalah satu Vercel Serverless Function independen — Vercel
+otomatis bikin endpoint dari struktur foldernya (mirip App Router
+Next.js, tapi buat Python murni, bukan buat framework tertentu).
+
+  api/accounts/index.py       -> GET/POST /api/accounts
+  api/reports/index.py        -> GET /api/reports?report=...
+  api/budgets/index.py        -> GET/POST/DELETE /api/budgets
+
+Kenapa 7 jenis laporan digabung jadi SATU file (`api/reports/index.py`)
+bukan 7 file terpisah: Vercel Hobby (tier gratis) cuma boleh maksimal 12
+Serverless Function per deployment. Project ini udah pas di limit itu —
+endpoint baru WAJIB digabung ke function yang udah ada (pake query
+param buat milih "mode", kayak `?report=ledger` vs `?report=forecast`),
+bukan ditambah sebagai file baru, atau deployment bakal gagal karena
+kelebihan quota.
+
+`shared/` isinya kode yang dipakai ULANG dari banyak `api/*.py` — bukan
+serverless function sendiri, cuma library internal.
+
+--------------------------------------------------------------------------------
+5.2 AUTH HMAC — GIMANA CARA KERJANYA
+--------------------------------------------------------------------------------
+shared/auth.py implementasi auth custom pake HMAC-SHA256 (bukan pake
+library auth pihak ketiga kayak Auth0/Clerk) — dua jenis token:
+
+  Magic-link token (`generate_token`/`verify_token_signature`) — dipake
+  SEKALI doang buat login awal, kadaluarsa 60 menit, tercatat di tabel
+  `auth_tokens` biar gak bisa dipake dua kali (single-use).
+
+  Session cookie (`create_session`/`verify_session`) — dipake buat
+  SETIAP request setelahnya, berlaku 30 hari, isinya user_id + waktu
+  kadaluarsa, ditandatangani (signed) pake HMAC biar gak bisa dipalsuin
+  tanpa tau AUTH_SECRET (yang cuma ada di environment variable server,
+  gak pernah dikirim ke browser).
+
+`shared/http.py` nyediain helper yang dipake di HAMPIR SEMUA endpoint:
+  `require_session(handler)` — WAJIB ada session valid, kalau enggak
+  langsung 401.
+  `require_auth(handler)` — sama, tapi JUGA nerima header `X-API-Key`
+  (buat integrasi dari project lain, mis. dari fintrack-portfolio kalau
+  suatu saat mau nulis data langsung — belum dipakai sekarang).
+  `require_cron(handler)` — khusus endpoint yang dipanggil GitHub
+  Actions (job terjadwal), pake secret terpisah, BUKAN session cookie.
+  `session_or_public(handler)` — (BARU, Juli 2026) gak pernah 401, buat
+  endpoint yang boleh diakses publik dalam bentuk disamarkan. Lihat
+  Bagian 7.
+
+--------------------------------------------------------------------------------
+5.3 FILE-BY-FILE WALKTHROUGH
+--------------------------------------------------------------------------------
+├── api/
+│   ├── accounts/           GET daftar Chart of Accounts, POST tambah
+│   │                      kategori beban custom.
+│   ├── auth/                me.py (cek session aktif), verify.py
+│   │                      (verifikasi magic-link token).
+│   ├── budgets/              GET/POST/DELETE budget DAN goal (digabung
+│   │                      satu file, lihat 5.1).
+│   ├── cron/                 Job terjadwal (dipanggil GitHub Actions,
+│   │                      lihat .github/workflows/).
+│   ├── receipts/             OCR struk/nota (v2 — kirim foto ke bot,
+│   │                      di-parse otomatis).
+│   ├── recurring/            Transaksi berulang (tagihan bulanan, dst).
+│   ├── reports/               7 jenis laporan dalam satu file (5.1).
+│   ├── settings/               Pengaturan akun default (sumber
+│   │                      pengeluaran default, dst).
+│   ├── tags/                   Label/tag buat transaksi.
+│   ├── telegram/                Webhook bot Telegram — ini yang nerima
+│   │                      pesan chat dan mem-parsingnya jadi transaksi.
+│   └── transactions/            GET daftar transaksi (dengan journal
+│                              lines-nya), POST buat transaksi baru
+│                              (dipakai integrasi/API key juga, bukan
+│                              cuma dashboard).
+└── shared/
+    ├── auth.py                 HMAC token + session (5.2).
+    ├── db.py                    Client Supabase singleton.
+    ├── http.py                  Helper request/response + auth guards.
+    ├── journal.py                Logic posting transaksi double-entry
+    │                          (validasi balance, dst).
+    ├── masking.py                (BARU) Masking data buat viewer
+    │                          publik — Bagian 7.
+    ├── reports.py                 Helper agregasi laporan dipakai
+    │                          lintas api/ (bot + cron).
+    ├── forecast.py                 Model tren buat proyeksi (Holt,
+    │                          linear).
+    ├── receipt_parser.py            Parsing hasil OCR struk jadi field
+    │                          transaksi terstruktur.
+    ├── telegram.py                  Wrapper httpx buat manggil Telegram
+    │                          Bot API (raw httpx, bukan library PTB —
+    │                          keputusan sadar, lihat README blindspot
+    │                          B7).
+    └── validator.py, period.py, doc_number.py, state.py, scheduling.py,
+        activity.py, fx.py, sparkline.py   Helper-helper lebih kecil,
+                                          masing-masing satu tanggung
+                                          jawab spesifik.
+
+================================================================================
+6. DATABASE DEEP DIVE
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 SKEMA INTI & DOUBLE-ENTRY
+--------------------------------------------------------------------------------
+db/01_schema.sql adalah fondasinya:
+  chart_of_accounts — daftar akun (lihat Bagian 3)
+  transactions — "header" transaksi (tanggal, tipe dokumen, status)
+  journal_lines — baris-baris debit/kredit di dalam satu transaksi,
+  masing-masing nunjuk ke satu account_code
+
+File-file berikutnya (02 s.d. 17) nambah: view agregat (account_balances,
+monthly_summary), fungsi RPC (post_document, trial_balance,
+income_statement), RLS policies, audit log, fitur v2/v3 (budgets, goals,
+recurring, tags, custom categories, OCR receipts).
+
+Migration WAJIB dijalanin berurutan (01 dulu, baru 02, dst) — lihat
+scripts/setup_db.py atau CHEATSHEET.md buat cara jalaninnya.
+
+--------------------------------------------------------------------------------
+6.2 ROW LEVEL SECURITY & KENAPA BACKEND PAKAI SERVICE KEY
+--------------------------------------------------------------------------------
+Supabase RLS aktif di semua tabel sensitif — tapi backend Python
+(shared/db.py) connect pake SERVICE ROLE key, yang BYPASS semua RLS
+policy. Ini bukan lubang keamanan: keamanan aslinya ada di layer HTTP
+(shared/http.py's require_session/require_auth), bukan di layer
+database — backend adalah kode server-side yang dipercaya penuh, RLS-nya
+sendiri lebih relevan buat skenario kalau ada client yang connect
+LANGSUNG ke Supabase pake anon key (tidak dipakai di app ini sekarang,
+tapi disiapkan sebagai lapisan pertahanan tambahan).
+
+================================================================================
+7. FITUR PUBLIC-DEMO MASKING (DITAMBAHKAN JULI 2026)
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 KENAPA FITUR INI ADA
+--------------------------------------------------------------------------------
+fintrack-portfolio (project portfolio Rafi, lihat Bagian 9) punya tombol
+"Live Demo" yang ngelink LANGSUNG ke app FinTrack ini. Karena ini data
+keuangan ASLI Rafi, masalahnya: siapapun yang klik tombol itu bisa
+berpotensi liat saldo/total uang beneran. Fitur ini adalah solusinya:
+visitor yang gak login tetep bisa liat dashboard yang BENERAN hidup
+(struktur asli, transaksi asli mengalir), tapi semua ANGKA-nya
+disamarkan.
+
+--------------------------------------------------------------------------------
+7.2 CARA KERJANYA
+--------------------------------------------------------------------------------
+1. `shared/http.py`'s `session_or_public()` — endpoint yang tadinya
+   `require_session` (401 kalau gak login) diganti jadi ini buat operasi
+   BACA (GET). Operasi TULIS (POST/PUT/DELETE) TETAP `require_session`,
+   gak berubah — publik cuma boleh liat, gak pernah boleh ubah data.
+
+2. `shared/masking.py` — kalau viewer publik, field yang berisi
+   uang/nominal (`balance`, `amount`, `debit_amount`, dst) diganti jadi
+   `None` sebelum dikirim ke browser. BUKAN string kayak `"***"` — itu
+   pernah dicoba dan ketahuan bakal ngerusak arithmetic di frontend
+   (mis. Dashboard.tsx nge-jumlahin `debit_amount` buat grafik timeline
+   — string bakal jadi concat text kayak `"0***"`, bukan error yang
+   kelihatan). `None` aman karena SELURUH codebase ini udah punya pola
+   `value ?? 0` di mana-mana buat state "belum ada data".
+
+3. `src/types/api.ts` — schema Zod field-field itu diubah jadi
+   `.nullable()`, PERSIS yang di-mask di backend, gak lebih gak kurang.
+
+4. `src/App.tsx` — route Dashboard/Journal/Ledger/Reports SENGAJA gak
+   dibungkus `ProtectedRoute` lagi, biar HALAMAN-nya sendiri bisa
+   dirender buat visitor tanpa session (baru dulu SEMUA halaman redirect
+   ke /login kalau belum login — itu bikin masking ini gak kepake sama
+   sekali walau backend-nya udah bener, karena visitor gak pernah SAMPE
+   ke halamannya).
+
+5. `useExportGuard` + `OwnerOnlyDialog` — tombol export (xlsx/csv/json/
+   pdf) nampilin dialog "hanya pemilik" buat visitor publik, BUKAN
+   sebagai lapisan keamanan (datanya udah aman dari langkah 1-2 di atas),
+   tapi karena gak ada gunanya download file isinya kosong semua.
+
+--------------------------------------------------------------------------------
+7.3 YANG HARUS DIINGET KALAU NAMBAH FITUR BARU
+--------------------------------------------------------------------------------
+- Endpoint BARU yang nampilin angka uang: putuskan dulu apakah dia perlu
+  diakses publik (pake `session_or_public` + mask field-nya) atau tetap
+  `require_session` penuh (kalau datanya terlalu sensitif buat disamarkan
+  sebagian, mis. lebih aman full-block daripada coba masking parsial).
+- Field baru yang di-mask: HARUS diganti isinya jadi `None`, BUKAN
+  ditambah field baru di sampingnya (`row["x_masked"] = None` sambil
+  `row["x"]` masih ada) — kalau field asli tetep ada di payload, fitur
+  export bakal tetep bocorin angkanya walau tampilan dashboard kelihatan
+  aman (export makan objek yang sama persis kayak yang dipake render
+  layar).
+- Field itu jadi `number | null` di Zod — TypeScript bakal maksa lu cek
+  semua tempat yang makai field itu (jalanin `npm run typecheck`, dia
+  bakal nunjukin persis di mana yang perlu diperbaiki).
+- Ada test-nya di `tests/test_masking.py` (backend) — tambahin test
+  serupa buat endpoint/field baru, biar kalau suatu saat ada yang gak
+  sengaja lupa nge-mask, ketahuan dari test yang gagal, bukan dari
+  laporan orang yang gak sengaja liat angka lu.
+
+================================================================================
+8. KERJA SEHARI-HARI
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 JALANIN SEMUANYA DI LOKAL
+--------------------------------------------------------------------------------
+Frontend (Vite dev server, port 5173):
+  npm install
+  npm run dev
+
+Backend — BUTUH `vercel dev` jalan di port 3000 (vite.config.ts proxy
+`/api` ke situ), karena serverless function Python gak bisa jalan
+langsung pake Vite:
+  vercel dev
+
+.env harus ada dulu (copy dari .env.example, isi nilai asli — SUPABASE_
+URL, SUPABASE_SERVICE_KEY, AUTH_SECRET, dst).
+
+--------------------------------------------------------------------------------
+8.2 TESTING
+--------------------------------------------------------------------------------
+  python -m pytest tests/          Test backend (offline, di-mock,
+                                    kecuali tests/test_db.py yang emang
+                                    butuh koneksi Supabase asli)
+  npm run test                      Test frontend (vitest)
+  npm run typecheck                 Cek tipe TypeScript, gak generate
+                                    output apa-apa
+  npm run e2e                       Test end-to-end Playwright — INI
+                                    BUTUH backend+database beneran jalan,
+                                    hati-hati kalau database-nya data
+                                    asli (bukan data test terpisah)
+
+--------------------------------------------------------------------------------
+8.3 DEPLOY
+--------------------------------------------------------------------------------
+`git push` ke `main` → Vercel auto-deploy (frontend + backend sekaligus,
+karena satu deployment). `.github/workflows/` juga jalanin keepalive
+(nyegah Supabase free-tier auto-pause) dan backup harian otomatis.
+
+================================================================================
+9. HUBUNGAN DENGAN PROJECT fintrack-portfolio
+================================================================================
+Dua repo GitHub TERPISAH, dua Vercel project TERPISAH, TIDAK ada kode
+yang di-share langsung antara keduanya:
+
+  fintrack-project (repo ini)
+    - App FinTrack yang BENERAN lu pake tiap hari
+    - Stack: Vite + React + Python serverless + Supabase
+    - Data: ASLI, uang beneran
+
+  fintrack-portfolio (repo lain, folder lain di komputer lu)
+    - Website portfolio karier lu (Next.js)
+    - Salah satu halamannya (/fintrack) nyeritain FinTrack sebagai case
+      study, dan punya tombol "Live Demo" yang ngelink LANGSUNG ke URL
+      deployment project ini
+    - Bikin backend Next.js-nya SENDIRI (FastAPI, terpisah total) sebagai
+      "implementasi referensi" arsitektur yang sama — TAPI itu bukan
+      yang beneran lu pake, cuma tulisan/kode contoh buat nunjukkin
+      pemahaman arsitektur di portfolio. Project fintrack-project INI
+      yang jadi kebenaran (source of truth) buat app yang beneran jalan.
+
+Satu-satunya "sambungan" teknis antara keduanya adalah fitur di Bagian 7
+— portfolio nge-link ke URL live project ini, dan project ini yang
+nentuin (lewat masking) apa yang boleh diliat visitor dari sana. Kalau
+lu ubah domain/URL deployment project ini, inget update juga link "Live
+Demo" di fintrack-portfolio (file
+frontend/app/(portfolio)/fintrack/page.tsx, constant `LIVE_DEMO_URL`).
+
+Dokumentasi planning/build-plan lengkap portfolio-nya ada di
+fintrack-portfolio/doc.txt — kalau lu butuh konteks KENAPA fitur masking
+ini diminta, riwayat diskusinya ada di sana (bukan project ini),
+supaya doc.txt project INI (kalau ada/dibikin nanti) bisa fokus ke
+FinTrack doang tanpa campur konteks portfolio.
+
+================================================================================
+10. GLOSARIUM
+================================================================================
+COA                 Chart of Accounts — daftar kategori akun. Lihat
+                    Bagian 3.
+Double-entry        Setiap transaksi dicatat di MINIMAL dua akun (debit
+                    & kredit), totalnya harus sama. Lihat Bagian 3.
+HMAC                Hash-based Message Authentication Code — cara
+                    menandatangani data biar bisa diverifikasi gak
+                    diubah, tanpa perlu database lookup buat setiap
+                    verifikasi (untuk session, cuma buat auth_tokens
+                    yang sekali-pakai).
+Journal Lines       Baris debit/kredit individual di dalam satu
+                    transaksi.
+Magic link          Link login sekali-pakai, kadaluarsa cepat — beda
+                    dari link biasa yang bisa diklik berkali-kali.
+Masking             (Bagian 7) Mengganti nilai sensitif jadi None
+                    sebelum dikirim ke viewer yang tidak berwenang.
+Normal balance      Arah (debit/kredit) yang bikin saldo suatu akun
+                    NAIK — aset & beban normalnya debit, liabilitas/
+                    ekuitas/pendapatan normalnya kredit.
+RLS                 Row Level Security — aturan akses database per
+                    baris (Postgres/Supabase).
+RPC                 Remote Procedure Call — di konteks Supabase, artinya
+                    manggil fungsi SQL yang didefinisikan di database
+                    (mis. `post_document`, `trial_balance`) dari kode
+                    Python/JS, bukan query tabel langsung.
+Serverless function Satu file kode yang Vercel jalanin sebagai satu
+                    "mini-server" independen per request — lihat Bagian
+                    5.1.
+Service role key    Kredensial Supabase yang BYPASS semua RLS policy —
+                    cuma dipakai backend server-side, TIDAK PERNAH di
+                    frontend.
+Session cookie      Bukti login yang disimpan browser, berlaku lama (30
+                    hari), berbeda dari magic link yang cuma buat login
+                    awal.
+Trial Balance       Laporan total debit vs total kredit semua akun —
+                    kalau beda, ada kesalahan.

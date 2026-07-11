@@ -936,6 +936,7 @@ def income_preview(chat_id, user_id):
 def transfer_menu(chat_id, mid):
     kb = [
         [tg.btn("🪙 Isi Kas Kecil (auto)", "tr:imprest")],
+        [tg.btn("✋ Kas Kecil (manual)", "tr:kaskecil_manual")],
         [tg.btn("💰 Ke Tabungan", "tr:savings_in"), tg.btn("🏦 Dari Tabungan", "tr:savings_out")],
         [tg.btn("✖️ Batal", "act:cancel")],
     ]
@@ -1127,6 +1128,18 @@ def handle_callback(cb):
     # Transfer
     if data == "tr:imprest":
         return transfer_imprest_preview(chat_id, user_id)
+    if data == "tr:kaskecil_manual":
+        # Beda dari "tr:imprest": itu auto-hitung selisih ke target dan
+        # disabled kalau saldo sudah cukup. Ini buat kasus saldo Kas Besar
+        # gak cukup buat ngisi penuh ke target (mis. target 500rb tapi
+        # cuma ada 200rb) — pemindahan dana nominal bebas, gak dipaksa
+        # nyampe target. Sumber/tujuan tetap dari bot_settings (bukan
+        # hardcode "1120"/"1130") biar konsisten sama tr:imprest kalau
+        # akunnya pernah diganti lewat /settings.
+        kk = setting("kas_kecil_account", "1130")
+        src = setting("kas_kecil_source", "1120")
+        set_state(user_id, "TRANSFER_AMOUNT", {"from": src, "to": kk, "desc": "Transfer manual ke kas kecil"})
+        return tg.edit_message(chat_id, mid, f"💵 Ketik nominal transfer {src}→{kk}:")
     if data in ("tr:savings_in", "tr:savings_out"):
         savings = setting("savings_account", "1140")
         bni = "1120"

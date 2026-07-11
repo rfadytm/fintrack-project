@@ -350,3 +350,84 @@ def test_reverse_with_doc_still_reverses():
     with patch.object(webhook, "cmd_reverse") as cmd_reverse:
         webhook.handle_command(chat_id=1, user_id=1, text="/reverse KK-2026-07-0001")
     cmd_reverse.assert_called_once_with(1, "KK-2026-07-0001")
+
+
+# ============================================================
+# tr:kaskecil_manual — manual (arbitrary-amount) BNI -> kas kecil transfer.
+# Added 2026-07-11: distinct from tr:imprest (auto-fills the DIFFERENCE to
+# hit kas_kecil_target, disabled once balance >= target) for the case where
+# the source account doesn't have enough to reach the full target — this
+# flow posts whatever amount is typed, no target check at all.
+# ============================================================
+
+
+def test_tr_kaskecil_manual_prompts_for_amount_using_bot_settings_accounts():
+    fs = FakeState()
+    cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "tr:kaskecil_manual"}
+    edited = []
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(
+        webhook, "db", return_value=MagicMock(table=MagicMock(return_value=_mock_table()))
+    ), patch.object(webhook.tg, "answer_callback"), patch.object(
+        webhook.tg, "edit_message", side_effect=lambda cid, mid, text, **kw: edited.append(text)
+    ):
+        webhook.handle_callback(cb)
+    # No bot_settings rows mocked -> setting() falls back to its own
+    # defaults, which must match tr:imprest's source/target accounts
+    # (1120/1130) so the two flows stay consistent if the settings are
+    # ever reconfigured via /settings.
+    assert fs.state == "TRANSFER_AMOUNT"
+    assert fs.data == {"from": "1120", "to": "1130", "desc": "Transfer manual ke kas kecil"}
+    assert "1120" in edited[0] and "1130" in edited[0]
+
+
+def test_tr_kaskecil_manual_does_not_check_target_unlike_tr_imprest():
+    """The whole point of this flow: post_journal must be reachable even
+    when the amount typed is smaller than (target - current balance), which
+    tr:imprest would refuse to do at all (it disables itself once balance >=
+    target, and never lets the user type a smaller top-up)."""
+    fs = FakeState()
+    fs.set(1, "TRANSFER_AMOUNT", {"from": "1120", "to": "1130", "desc": "Transfer manual ke kas kecil"})
+    fee_table = _mock_table(data=[{"fee_amount": 2500, "fee_account": "5820", "method_label": "BI-Fast BNI->SeaBank"}])
+    coa_table = _mock_table(data=[{"account_name": "Bank BNI (Kas Besar)"}])
+    tables = {"transfer_fee_rules": fee_table, "chart_of_accounts": coa_table}
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(
+        webhook, "db", return_value=MagicMock(table=MagicMock(side_effect=lambda name: tables.get(name, _mock_table())))
+    ), patch.object(webhook.tg, "send_message"):
+        # 200rb typed, deliberately less than the 500rb imprest target —
+        # this must NOT be rejected the way tr:imprest would refuse it.
+        webhook.handle_text(chat_id=1, user_id=1, text="200000")
+    assert fs.state == "TRANSFER_PREVIEW"
+    assert fs.data["lines"] == [
+        {"account_code": "1130", "debit": 200000, "credit": 0},
+        {"account_code": "5820", "debit": 2500, "credit": 0},
+        {"account_code": "1120", "debit": 0, "credit": 202500},
+    ]
+    assert fs.data["desc"] == "Transfer manual ke kas kecil"
+
+
+def test_tr_kaskecil_manual_posts_with_its_own_description_not_generic_transfer():
+    """post_journal falls back to the generic "Transfer" description when
+    state_data has no "desc" (true for tr:savings_in/out today) — this flow
+    must NOT fall into that default, so it's distinguishable from both
+    tr:imprest's "Pengisian imprest kas kecil" and a plain savings transfer
+    in the ledger."""
+    fs = FakeState()
+    lines = [
+        {"account_code": "1130", "debit": 200000, "credit": 0},
+        {"account_code": "5820", "debit": 2500, "credit": 0},
+        {"account_code": "1120", "debit": 0, "credit": 202500},
+    ]
+    fs.set(1, "TRANSFER_PREVIEW", {"from": "1120", "to": "1130", "desc": "Transfer manual ke kas kecil", "lines": lines})
+    cb = {"from": {"id": 1}, "message": {"chat": {"id": 1}, "message_id": 1}, "id": "cbid", "data": "tr_post"}
+    with patch.object(webhook, "get_state", side_effect=lambda uid: fs.get(uid)), patch.object(
+        webhook, "set_state", side_effect=fs.set
+    ), patch.object(webhook, "reset_state", side_effect=fs.reset), patch.object(
+        webhook, "post_journal", return_value="TR-2026-07-001"
+    ) as post_journal, patch.object(webhook.tg, "answer_callback"), patch.object(webhook.tg, "send_message"):
+        webhook.handle_callback(cb)
+    post_journal.assert_called_once_with("TR", webhook.today_wib(), "Transfer manual ke kas kecil", lines)
+    assert fs.state == "IDLE"

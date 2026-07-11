@@ -2107,3 +2107,50 @@ Testing: tsc bersih, CategoryChart.test.tsx 2/2 tetap lulus (gak ada
 test yang nyentuh hover/hitting tooltip state, jadi regresi ini gak
 ke-cover otomatis — dicatat sebagai blindspot testing, bukan sesuatu
 yang langsung ditambal test barunya di iterasi ini).
+
+9.22 Transfer manual Kas Besar -> Kas Kecil, beda dari pengisian imprest
+auto (2026-07-11)
+Konteks: menu Transfer di bot Telegram sebelumnya cuma punya satu opsi
+buat ngisi kas kecil — "🪙 Isi Kas Kecil (auto)" (tr:imprest), yang
+SELALU ngitung sendiri selisih ke target (`kas_kecil_target`, default
+Rp 500.000) dan gak bisa diganggu gugat: kalau saldo BNI (Kas Besar)
+gak cukup buat ngisi PENUH ke target, user gak punya cara buat mindahin
+dana sebagian aja — flow itu cuma disable diri sendiri kalau saldo kas
+kecil udah >= target, gak ada jalur buat "isi seadanya".
+
+Fix: tombol baru "✋ Kas Kecil (manual)" (tr:kaskecil_manual) di
+transfer_menu(), reuse pola yang PERSIS sama kayak tr:savings_in/out
+yang udah ada (nominal bebas via state TRANSFER_AMOUNT, bukan
+auto-hitung) — bedanya cuma akun sumber/tujuan diambil dari
+bot_settings (kas_kecil_source/kas_kecil_account, sama persis kayak
+yang dipake tr:imprest) supaya tetap konsisten kalau akunnya pernah
+diganti lewat /settings, bukan di-hardcode "1120"/"1130" kayak
+tr:savings_in/out yang hardcode "1120" buat BNI.
+
+Detail implementasi (api/telegram/webhook.py):
+1. Callback tr:kaskecil_manual set_state ke TRANSFER_AMOUNT dengan
+   {"from": src, "to": kk, "desc": "Transfer manual ke kas kecil"} —
+   "desc" SENGAJA diisi eksplisit dari awal (beda dari tr:savings_in/
+   out yang gak pernah set "desc" sama sekali, jadi kepake fallback
+   generic "Transfer" pas posting). Biar di ledger keliatan jelas beda
+   dari "Pengisian imprest kas kecil" (tr:imprest) maupun transfer
+   tabungan biasa.
+2. Alur amount->preview->post-nya REUSE 100% state machine
+   TRANSFER_AMOUNT/TRANSFER_PREVIEW yang udah ada (handle_text,
+   transfer_preview, tr_post) — gak ada state baru, gak ada kode
+   posting baru. fee_rule(src, kk) otomatis kepake juga (rule BNI->
+   SeaBank Rp 2.500 BI-Fast dari transfer_fee_rules), sama kayak yang
+   dipake tr:imprest, jadi feenya konsisten antara isi-otomatis vs
+   isi-manual.
+3. TIDAK ADA pengecekan target sama sekali di flow ini — itu memang
+   intinya. User bisa transfer Rp 200.000 walau target kas kecil Rp
+   500.000, gak dipaksa pas-pasan atau ditolak.
+
+Testing: 3 test baru di tests/test_webhook_flows.py — (a) klik tombol
+transisi ke TRANSFER_AMOUNT dengan from/to/desc yang bener (pakai
+default bot_settings 1120/1130), (b) ketik nominal LEBIH KECIL dari
+selisih-ke-target tetap lolos ke TRANSFER_PREVIEW dengan journal_lines
+yang bener termasuk fee (ini yang secara eksplisit gak akan pernah
+lolos di tr:imprest), (c) posting manggil post_journal dengan desc
+"Transfer manual ke kas kecil", bukan fallback generic "Transfer".
+Total pytest 118 → 121, semua lulus.

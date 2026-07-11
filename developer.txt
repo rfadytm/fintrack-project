@@ -182,7 +182,9 @@ src/
 │                         Ledger, Reports, COA, Settings, Budgets, Goals,
 │                         Recurring, Bills, Login, AuthCallback).
 ├── components/            Reusable: BalanceCard, CategoryChart,
-│   │                     TimelineChart, TransactionTable, Navbar,
+│   │                     TimelineChart, TransactionTable, Navbar
+│   │                     (link-link halaman digabung jadi satu tombol
+│   │                     "Menu" -> dropdown vertikal, Juli 2026),
 │   │                     ProtectedRoute, OwnerOnlyDialog (baru, Bagian 7).
 │   └── ui/                 Komponen dasar (Button, Card, Dialog, Table,
 │                         dst) — kemungkinan besar berbasis shadcn/Radix.

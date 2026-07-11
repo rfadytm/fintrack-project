@@ -1978,3 +1978,18 @@ Testing: tsc bersih, Vitest 45 → 50 (+5: CategoryChart render populated,
 BalanceCard masked, niceScale formatChartAxis), pytest 118 (tidak
 berubah, tidak ada perubahan backend), build sukses, Playwright e2e 14 →
 15 (1 auth test diganti + 1 test baru buat rute yang masih digembok).
+
+9.18 Navbar: 10 link digabung jadi satu tombol "Menu" (dropdown vertikal) (2026-07-11)
+Navbar.tsx dulu nampilin 10 link halaman sejajar horizontal (scroll
+horizontal di mobile). Diganti satu tombol "Menu" (ikon Lucide Menu/X)
+yang buka panel dropdown vertikal berisi semua link — tertutup otomatis
+kalau: link diklik (lalu navigasi), klik di luar dropdown, atau tombol
+Escape. Berlaku di semua ukuran layar, bukan cuma mobile.
+
+Testing: Navbar.test.tsx diperbarui (link sekarang memang tidak ada di
+DOM sebelum tombol Menu diklik — bukan bug, disengaja) + 2 test baru
+(menu ketutup setelah klik link, isi dropdown ke-render setelah dibuka).
+e2e/navigation.spec.ts diperbarui untuk buka tombol Menu sebelum tiap
+klik link (dropdown ketutup lagi tiap pindah halaman). tsc bersih,
+Vitest 50 → 52, pytest 118 (tidak berubah), build sukses, Playwright
+e2e tetap 15 (1 test diperbarui, bukan ditambah).

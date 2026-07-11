@@ -2085,3 +2085,25 @@ preview lokal masih nyajiin `dist/` HASIL BUILD LAMA (dari sebelum
 perubahan ini), bukan build terbaru. Rebuild manual (`npm run build`)
 sebelum re-run e2e menyelesaikannya tanpa perlu restart server preview
 (vite preview baca file dari disk tiap request, gak nge-cache konten).
+
+9.21 CategoryChart: teks tooltip item ke-invert (hitam di atas gelap) (2026-07-11)
+User laporan: kalau kursor diarahkan ke pie chart "Beban per Kategori",
+teks tooltip-nya kebalik warnanya dari background sekitarnya (susah
+kebaca). Root cause: Tooltip di CategoryChart.tsx cuma set `contentStyle`
+(background+border box-nya), tapi gak set `labelStyle`/`itemStyle` sama
+sekali — Recharts' DefaultTooltipContent punya default `color: "#000"`
+bawaan buat baris label/item yang cuma ke-override kalau props itu
+diisi eksplisit. `contentStyle.color` cuma nyampe ke elemen wrapper,
+gak ikut ke-inherit karena baris label/item punya inline style sendiri.
+
+TimelineChart.tsx ternyata SUDAH benar dari awal (ada `labelStyle={{
+color: "#98989d" }}` eksplisit) — CategoryChart.tsx yang kelewatan pas
+reskin §9.17. Fix: tambah `labelStyle`/`itemStyle` eksplisit ke warna
+terang yang sama kayak contentStyle. Dicek juga: cuma 2 file di seluruh
+src/ yang pakai Tooltip Recharts, jadi gak ada instance lain yang perlu
+ditambal.
+
+Testing: tsc bersih, CategoryChart.test.tsx 2/2 tetap lulus (gak ada
+test yang nyentuh hover/hitting tooltip state, jadi regresi ini gak
+ke-cover otomatis — dicatat sebagai blindspot testing, bukan sesuatu
+yang langsung ditambal test barunya di iterasi ini).

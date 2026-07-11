@@ -41,6 +41,12 @@ export default function CategoryChart({ data = [] }: { data?: CategoryDatum[] })
               borderRadius: 12,
               color: "#f5f5f7",
             }}
+            // Blindspot fix: contentStyle's `color` only covers the wrapper —
+            // Recharts' DefaultTooltipContent bakes in color: "#000" for the
+            // label/item lines unless labelStyle/itemStyle say otherwise, so
+            // the category name rendered black-on-dark (unreadable) on hover.
+            labelStyle={{ color: "#f5f5f7" }}
+            itemStyle={{ color: "#f5f5f7" }}
           />
         </PieChart>
       </ResponsiveContainer>

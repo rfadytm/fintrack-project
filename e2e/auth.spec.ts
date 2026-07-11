@@ -15,6 +15,19 @@ test("public-demo dashboard stays reachable (masked) when not authenticated", as
   // Masked (server returns null for sensitive amounts) — the real balance
   // from the authenticated fixtures must never leak through.
   await expect(page.getByText("Rp 2.500.000")).not.toBeVisible();
+  // Public viewers see a blurred placeholder instead of the real number (or
+  // a misleading "Rp 0") — verifies the auto-forced blur, not just absence
+  // of the real figure. Two cash accounts are masked, so both cards render
+  // the same placeholder text — take the first and check its wrapping div
+  // (the text itself lives in AnimatedNumber's inner span; blur-md is on
+  // the parent, same layout as BalanceCard.test.tsx).
+  const balancePlaceholder = page.getByText("Rp 1.000.000").first();
+  await expect(balancePlaceholder).toBeVisible();
+  await expect(balancePlaceholder.locator("xpath=..")).toHaveClass(/blur-md/);
+  // The manual privacy toggle only makes sense for a logged-in owner — a
+  // public viewer's data is already masked server-side, so there is nothing
+  // for the toggle to reveal.
+  await expect(page.getByRole("button", { name: /nominal/ })).not.toBeVisible();
 });
 
 test("still-gated pages redirect to /login when not authenticated", async ({ page }) => {

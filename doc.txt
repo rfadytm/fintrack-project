@@ -2028,3 +2028,60 @@ type/tag/year/month yang lama juga; nambah harness test HTTP-handler
 baru buat satu param dianggap di luar skop permintaan ini), Vitest 52
 (tidak berubah, Journal.tsx juga belum punya test file sebelumnya),
 build sukses.
+
+9.20 Dashboard: kotak Net kepotong baris + blur otomatis buat viewer publik (2026-07-11)
+Dua laporan dari screenshot user:
+
+(a) Kotak "Net" di Dashboard pecah jadi dua baris ("-Rp" di baris
+pertama, nominalnya di baris kedua) padahal kotak lain di sebelahnya
+(Pengeluaran, hanya 1 karakter lebih pendek) tetap satu baris. Ternyata
+memang murni soal lebar: string "-Rp 1.305.038" pas di batas lebar
+kotak pada text-3xl, dan browser wrap di spasi setelah "-Rp" begitu
+kelebihan sedikit. Fix: tambah `whitespace-nowrap` ke value semua kotak
+stat (Pemasukan/Pengeluaran/Net/Savings Rate) plus BalanceCard — bukan
+cuma Net, biar bug yang sama gak muncul lagi di kotak lain kalau
+nominalnya kebetulan mepet juga.
+
+(b) Viewer yang akses dashboard tanpa login (mis. lewat link demo di
+website portofolio) sebelumnya lihat "Rp 0" polos di semua kotak saldo
+dan ringkasan bulanan — bukan blur. Ini kebalik dari maksud fitur
+masking §9.15/§9.16 (nilai asli null dari server), soalnya "Rp 0" kebaca
+sebagai "saldo/laba beneran kosong", bukan "disembunyikan". Root cause:
+komponen BalanceCard dan Dashboard cuma nge-blur kalau state `privacy`
+manual di-toggle owner — untuk viewer publik yang gak pernah nge-toggle
+apa-apa, `masked` selalu false, dan AnimatedNumber jatuh ke fallback 0
+begitu value-nya null.
+
+Fix: Dashboard.tsx sekarang deteksi viewer publik lewat useAuth()
+(`isPublic = !authLoading && !loggedIn`), dan `masked = isPublic ||
+privacy` — jadi blur otomatis nyala permanen buat viewer publik,
+independen dari toggle manual. Toggle mata (Eye/EyeOff) di-sembunyiin
+sama sekali buat viewer publik (percuma ditampilin — data aslinya
+memang sudah null dari server, gak ada yang bisa "ditampilkan"balik).
+BalanceCard dan kotak stat Dashboard, kalau value null DAN masked,
+substitusi angka placeholder (bukan 0) sebelum di-blur, biar kebaca
+"ada angka asli, cuma disembunyikan" — placeholder sengaja pakai digit
+berurutan (1.234.567, dst, bukan angka "wajar" kayak 2.500.000) biar
+gak collision sama data asli/fixture manapun.
+
+Blindspot ke-tangkep pas nulis e2e test buat ini: awalnya placeholder
+Pemasukan dipilih 2.500.000 (angka yang "masuk akal") — ternyata itu
+PERSIS sama dengan saldo asli akun Bank BCA di fixture e2e, jadi bikin
+test regresi existing (yang ngecek angka asli gak boleh bocor) jadi
+false-positive kalau dites ulang. Diganti ke pola digit berurutan yang
+jelas bukan angka nyata.
+
+Testing: e2e/auth.spec.ts diperkuat — cek placeholder blur muncul
+("Rp 1.000.000" + class blur-md) dan toggle mata gak ada sama sekali
+buat viewer publik, bukan cuma "angka asli gak muncul" seperti
+sebelumnya. BalanceCard.test.tsx +2 test (null+masked -> placeholder
+blur, null+unmasked -> tetap Rp 0 apa adanya). tsc bersih, pytest 118
+(tidak berubah), Vitest 52 → 54, Playwright e2e 15/15 lulus, build
+sukses.
+
+Note operasional: awalnya salah baca e2e gagal sebagai bug logic —
+ternyata `playwright.config.ts`'s `reuseExistingServer` bikin server
+preview lokal masih nyajiin `dist/` HASIL BUILD LAMA (dari sebelum
+perubahan ini), bukan build terbaru. Rebuild manual (`npm run build`)
+sebelum re-run e2e menyelesaikannya tanpa perlu restart server preview
+(vite preview baca file dari disk tiap request, gak nge-cache konten).

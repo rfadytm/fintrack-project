@@ -10,6 +10,7 @@ import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
 import { AnimatedNumber } from "../components/ui/animated-number";
 import { useApp } from "../context/AppContext";
+import { useAuth } from "../hooks/useAuth";
 import { useReport } from "../hooks/useReports";
 import { useTransactions } from "../hooks/useTransactions";
 import { api } from "../utils/api";
@@ -20,10 +21,29 @@ import type { BalanceRow } from "../types/api";
 
 const CASH = ["1110", "1120", "1130", "1140"];
 
+// Placeholder yang ditampilkan (di-blur) buat viewer publik saat nilai asli
+// null (disamarkan server-side) — biar kebaca "ada angka nyata, cuma
+// disembunyikan", bukan "Rp 0" polos yang kebaca seolah datanya kosong.
+// Sengaja pakai digit berurutan (bukan angka "wajar" semacam 2.500.000) biar
+// gak kebetulan sama persis dengan angka fixture/data asli manapun.
+const PUBLIC_PLACEHOLDERS: Record<string, number> = {
+  Pemasukan: 1_234_567,
+  Pengeluaran: 2_345_678,
+  Net: 3_456_789,
+  "Savings Rate": 42,
+};
+
 export default function Dashboard() {
   const { period, setPeriod } = useApp();
-  // Privacy mode: blur nominal uang biar aman ditampilkan di tempat umum.
+  const { loggedIn, loading: authLoading } = useAuth();
+  // Diakses tanpa login (mis. lewat link demo di website portofolio) ->
+  // paksa blur permanen, tidak bisa di-toggle (data aslinya memang sudah
+  // null dari server, jadi toggle "tampilkan" tidak akan pernah berguna).
+  const isPublic = !authLoading && !loggedIn;
+  // Privacy mode: blur nominal uang biar aman ditampilkan di tempat umum
+  // (khusus owner yang login — toggle manual, opsional).
   const [privacy, setPrivacy] = useState(false);
+  const masked = isPublic || privacy;
   const bal = useReport("balance", () => api.balance(), []);
   const monthly = useReport(
     `monthly:${period.year}:${period.month}`,
@@ -45,15 +65,17 @@ export default function Dashboard() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
           <h2 className="text-white text-xl font-bold m-0">Dashboard</h2>
-          <button
-            type="button"
-            onClick={() => setPrivacy((p) => !p)}
-            aria-label={privacy ? "Tampilkan nominal" : "Sembunyikan nominal"}
-            aria-pressed={privacy}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-white/5 border border-white/[0.06] text-muted hover:text-white hover:bg-white/10 transition-colors"
-          >
-            {privacy ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+          {!isPublic && (
+            <button
+              type="button"
+              onClick={() => setPrivacy((p) => !p)}
+              aria-label={privacy ? "Tampilkan nominal" : "Sembunyikan nominal"}
+              aria-pressed={privacy}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-white/5 border border-white/[0.06] text-muted hover:text-white hover:bg-white/10 transition-colors"
+            >
+              {privacy ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2.5 font-semibold text-white">
           <Button variant="outline" size="icon" aria-label="Bulan sebelumnya" onClick={prev}>
@@ -73,7 +95,7 @@ export default function Dashboard() {
         {bal.loading
           ? [1, 2].map((i) => <Skeleton key={i} className="h-20 flex-1 min-w-[160px]" />)
           : cash.map((c: BalanceRow) => (
-              <BalanceCard key={c.code} name={c.account_name} balance={c.balance} type="aset" masked={privacy} />
+              <BalanceCard key={c.code} name={c.account_name} balance={c.balance} type="aset" masked={masked} />
             ))}
       </div>
 
@@ -85,36 +107,44 @@ export default function Dashboard() {
         variants={{ show: { transition: { staggerChildren: 0.08 } } }}
       >
         {[
-          { label: "Pemasukan", value: m.income ?? 0, format: formatRupiah, color: "text-green" },
-          { label: "Pengeluaran", value: m.expense ?? 0, format: formatRupiah, color: "text-red" },
-          { label: "Net", value: m.net ?? 0, format: formatRupiah, color: "text-white" },
+          { label: "Pemasukan", raw: m.income, value: m.income ?? 0, format: formatRupiah, color: "text-green" },
+          { label: "Pengeluaran", raw: m.expense, value: m.expense ?? 0, format: formatRupiah, color: "text-red" },
+          { label: "Net", raw: m.net, value: m.net ?? 0, format: formatRupiah, color: "text-white" },
           {
             label: "Savings Rate",
+            raw: m.savings_rate,
             value: m.savings_rate != null ? m.savings_rate * 100 : null,
             format: (v: number) => `${Math.round(v)}%`,
             color: "text-blue",
           },
-        ].map((s) => (
-          <motion.div
-            key={s.label}
-            variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}
-          >
-            <Card>
-              <div className="text-muted text-xs uppercase tracking-wider">{s.label}</div>
-              <div
-                className={cn("text-3xl font-bold tabular-nums mt-1", s.color, privacy && "blur-md select-none")}
-              >
-                {s.value != null ? <AnimatedNumber value={s.value} format={s.format} /> : "-"}
-              </div>
-            </Card>
-          </motion.div>
-        ))}
+        ].map((s) => {
+          // raw == null cuma berarti "disamarkan server-side" kalau viewer publik —
+          // untuk owner yang login, raw null artinya laporan belum kebentuk (biarkan
+          // fallback ke 0/"-" seperti sebelumnya).
+          const displayValue = s.raw == null && isPublic ? PUBLIC_PLACEHOLDERS[s.label] : s.value;
+          return (
+            <motion.div key={s.label} variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}>
+              <Card>
+                <div className="text-muted text-xs uppercase tracking-wider">{s.label}</div>
+                <div
+                  className={cn(
+                    "text-3xl font-bold tabular-nums mt-1 whitespace-nowrap",
+                    s.color,
+                    masked && "blur-md select-none"
+                  )}
+                >
+                  {displayValue != null ? <AnimatedNumber value={displayValue} format={s.format} /> : "-"}
+                </div>
+              </Card>
+            </motion.div>
+          );
+        })}
       </motion.div>
 
       {m.opening_balance ? (
         <div className="text-sm text-blue bg-blue/10 rounded-lg px-3 py-2">
           💡 Bulan ini termasuk saldo awal (dari <code>/setup</code>):{" "}
-          <b className={cn(privacy && "blur-md select-none")}>
+          <b className={cn(masked && "blur-md select-none")}>
             <AnimatedNumber value={m.opening_balance ?? 0} format={formatRupiah} />
           </b>{" "}
           — dicatat sebagai modal awal, bukan pendapatan, supaya Laba Rugi

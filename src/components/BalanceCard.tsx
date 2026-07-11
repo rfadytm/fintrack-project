@@ -11,7 +11,13 @@ interface BalanceCardProps {
   masked?: boolean;
 }
 
+// balance == null berarti nilai asli disamarkan server-side (viewer publik,
+// lihat shared/masking.py) — tampilkan angka placeholder yang di-blur, bukan
+// "Rp 0" polos yang kebaca seolah saldonya benar-benar kosong.
+const PLACEHOLDER_BALANCE = 1_000_000;
+
 export default function BalanceCard({ name, balance, type, masked = false }: BalanceCardProps) {
+  const displayValue = balance == null && masked ? PLACEHOLDER_BALANCE : balance;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -21,8 +27,8 @@ export default function BalanceCard({ name, balance, type, masked = false }: Bal
     >
       <Card className={type === "liabilitas" ? "border-red/20" : undefined}>
         <div className="text-muted text-xs">{name}</div>
-        <div className={cn("text-xl font-bold text-white mt-1", masked && "blur-md select-none")}>
-          <AnimatedNumber value={balance} format={formatRupiah} />
+        <div className={cn("text-xl font-bold text-white mt-1 whitespace-nowrap", masked && "blur-md select-none")}>
+          <AnimatedNumber value={displayValue} format={formatRupiah} />
         </div>
       </Card>
     </motion.div>

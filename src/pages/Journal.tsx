@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TransactionTable from "../components/TransactionTable";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
 import { Skeleton } from "../components/ui/skeleton";
 import { useTransactions } from "../hooks/useTransactions";
@@ -33,9 +34,23 @@ export default function Journal() {
   const [sortBy, setSortBy] = useState<SortKey>("date_desc");
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
   const { guard, dialogOpen, setDialogOpen } = useExportGuard();
   const limit = 25;
-  const qs = `?limit=${limit}&offset=${page * limit}${type ? `&type=${type}` : ""}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}`;
+
+  // Debounce: tunggu user berhenti ngetik 350ms sebelum query ke server,
+  // biar gak nembak request tiap keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(0);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const filterQsPart = `${type ? `&type=${type}` : ""}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}${search ? `&q=${encodeURIComponent(search)}` : ""}`;
+  const qs = `?limit=${limit}&offset=${page * limit}${filterQsPart}`;
   const { loading, transactions, total, error } = useTransactions(qs);
   const pages = Math.ceil((total || 0) / limit);
   const tagsQuery = useQuery({ queryKey: ["tags"], queryFn: api.tags });
@@ -65,7 +80,7 @@ export default function Journal() {
   }, [loading, pages, page]);
 
   const buildRows = async (): Promise<XlsxRow[]> => {
-    const filterQs = `?limit=2000${type ? `&type=${type}` : ""}${tag ? `&tag=${encodeURIComponent(tag)}` : ""}`;
+    const filterQs = `?limit=2000${filterQsPart}`;
     const [txRes, accRes] = await Promise.all([api.transactions(filterQs), api.accounts()]);
     const nameByCode: Record<string, string> = {};
     (accRes.accounts || []).forEach((a) => (nameByCode[a.code] = a.account_name));
@@ -111,6 +126,13 @@ export default function Journal() {
     <div className="space-y-4">
       <h2 className="text-white text-xl font-bold m-0">Jurnal</h2>
       <div className="flex gap-3 items-center flex-wrap">
+        <Input
+          className="w-auto min-w-[200px]"
+          placeholder="Cari keterangan transaksi…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          aria-label="Cari transaksi"
+        />
         <Select
           className="w-auto"
           value={type}

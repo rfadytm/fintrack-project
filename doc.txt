@@ -1993,3 +1993,38 @@ e2e/navigation.spec.ts diperbarui untuk buka tombol Menu sebelum tiap
 klik link (dropdown ketutup lagi tiap pindah halaman). tsc bersih,
 Vitest 50 → 52, pytest 118 (tidak berubah), build sukses, Playwright
 e2e tetap 15 (1 test diperbarui, bukan ditambah).
+
+9.19 Jurnal: pencarian transaksi server-side (2026-07-11)
+Sebelum ini, halaman Jurnal cuma bisa difilter per tipe dokumen dan tag —
+gak ada cara cari transaksi tertentu berdasarkan keterangan. Didiskusikan
+dua opsi: (a) fetch semua transaksi lalu filter di client, vs (b) tambah
+parameter search ke endpoint yang sudah ada. Dipilih opsi (b) karena
+pagination tetap akurat walau data bertambah banyak ke depannya, dan
+perubahannya kecil (bukan endpoint baru, bukan ubah skema, jadi tidak
+menyentuh limit 12 serverless function Vercel).
+
+GET /api/transactions sekarang terima `?q=<keyword>`, di-filter pakai
+`.ilike("description", f"%{q}%")` (case-insensitive substring match) —
+digabung dengan filter type/tag yang sudah ada (AND, bukan OR). Sengaja
+TIDAK ikut search doc_number sekalian lewat `.or_()` PostgREST — nilai
+`q` yang mengandung koma/kurung bisa disalahartikan sebagai sintaks
+filter tambahan oleh PostgREST kalau digabung lewat `.or_()` (beda
+dengan `.ilike()` biasa yang nilainya di-encode aman sebagai satu query
+param). Untuk kebutuhan "cari transaksi" keterangan sudah cukup; kalau
+nanti perlu cari per nomor dokumen juga, tambah kolom search terpisah,
+jangan gabung ke satu query string mentah.
+
+Frontend: Journal.tsx dapat input pencarian baru, di-debounce 350ms
+(setSearchInput -> setTimeout -> setSearch, reset ke halaman 0 tiap
+ganti keyword) biar gak nembak request tiap keystroke. buildRows()
+(dipakai semua tombol export) direfactor pakai filterQsPart yang sama
+dengan query utama, jadi hasil export otomatis ikut ke-filter oleh
+keyword pencarian juga — konsisten dengan filter type/tag yang sudah
+ada duluan.
+
+Testing: tsc bersih, pytest 118 (tidak berubah — endpoint ini emang
+belum ada test coverage-nya sama sekali sebelum ini, untuk filter
+type/tag/year/month yang lama juga; nambah harness test HTTP-handler
+baru buat satu param dianggap di luar skop permintaan ini), Vitest 52
+(tidak berubah, Journal.tsx juga belum punya test file sebelumnya),
+build sukses.

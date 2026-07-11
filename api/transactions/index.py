@@ -86,6 +86,8 @@ class handler(BaseHTTPRequestHandler):
             "*, journal_lines(line_order, account_code, debit_amount, credit_amount)",
             count="exact",
         )
+        if q.get("q"):
+            query = query.ilike("description", f"%{q['q']}%")
         if q.get("type"):
             query = query.eq("doc_type", q["type"])
         if q.get("status"):

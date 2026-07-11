@@ -196,6 +196,48 @@ src/
 └── types/api.ts             Schema Zod + tipe TypeScript buat semua
                             bentuk response API.
 
+--------------------------------------------------------------------------------
+4.5 DESIGN SYSTEM: APPLE OBSIDIAN DARK GLASSMORPHISM (BARU, Juli 2026)
+--------------------------------------------------------------------------------
+Dashboard di-reskin total dari tema glassmorphic TERANG (blob warna
+pastel, card putih transparan) ke dark glassmorphism ala Apple HIG —
+kanvas obsidian gelap + card frosted-glass gelap. Cuma perubahan visual,
+TIDAK ada logic/state/endpoint yang berubah.
+
+Kuncinya di src/index.css's Tailwind v4 `@theme` block — token custom
+property (`--color-green`, `--color-red`, `--color-blue`, `--color-muted`,
+`--color-border`) diganti nilainya ke palet Apple system-color, dan
+otomatis nge-cascade ke SEMUA komponen yang udah pakai class semantik
+kayak `text-green`/`bg-blue/10` tanpa perlu edit file satu-satu. Kalau
+nambah warna baru: tambah/ubah TOKEN di sini, jangan hardcode hex di
+komponen — biar tetep gampang di-reskin lagi kalau perlu.
+
+Perkecualian penting: `--color-navy` SENGAJA TIDAK ikut diganti nilainya
+(tetap dark blue asli). Token itu dipakai dobel: sebagai warna
+BACKGROUND/aksen gelap (Button, Badge, Navbar, Dialog overlay — dark blue
+udah pas buat kanvas gelap) DAN sebagai warna TEKS heading/angka (yang
+harus JADI PUTIH di dark mode, bukan gelap-di-atas-gelap). Nyatuin dua
+peran itu di satu token cuma jalan pas temanya masih terang; begitu
+kanvasnya jadi gelap, cuma SATU peran yang bisa dipertahanin sama value
+lama. Solusinya: kalau nemu style dark-mode/reskin lain di masa depan
+yang mirip, JANGAN asumsi satu token = satu peran visual — cek dulu
+dipakai di CLASS APA (text- vs bg-/border-/shadow-) sebelum ganti nilai
+tokennya, atau bakal ada bagian yang jadi gak kebaca sama sekali (teks
+gelap di atas latar yang JUGA jadi gelap).
+
+Komponen `ui/*` (Card, Button, Input, Select, Badge, Dialog, Table, Tabs,
+Skeleton) semua udah direstyle jadi frosted-glass gelap secara langsung
+(bukan cuma via token), karena beberapa dari mereka hardcode asumsi warna
+(mis. Button variant "outline" dulu pakai `bg-white/70` eksplisit — itu
+gak bisa diperbaiki cuma dengan ganti token, harus disentuh langsung).
+
+Animasi modal (spring bounce) & shake form pakai keyframes CSS polos di
+index.css, BUKAN plugin `tailwindcss-animate` — plugin itu gak ada di
+package.json project ini, dan nambahnya cuma buat 1 fitur kecil dianggap
+gak sepadan. Kalau suatu saat mau animasi Radix yang lebih kompleks,
+pertimbangkan nambah plugin itu beneran daripada nulis keyframes manual
+terus-terusan.
+
 ================================================================================
 5. BACKEND DEEP DIVE
 ================================================================================
@@ -457,10 +499,20 @@ URL, SUPABASE_SERVICE_KEY, AUTH_SECRET, dst).
   npm run test                      Test frontend (vitest)
   npm run typecheck                 Cek tipe TypeScript, gak generate
                                     output apa-apa
-  npm run e2e                       Test end-to-end Playwright — INI
-                                    BUTUH backend+database beneran jalan,
-                                    hati-hati kalau database-nya data
-                                    asli (bukan data test terpisah)
+  npm run e2e                       Test end-to-end Playwright — TIDAK
+                                    butuh backend/database beneran jalan.
+                                    Login asli lewat magic-link Telegram
+                                    gak bisa dites headless, jadi tiap
+                                    spec nge-mock backend di level network
+                                    (page.route(), lihat e2e/mocks.ts &
+                                    playwright.config.ts) dan cuma
+                                    jalanin `npm run preview` (server
+                                    statis frontend doang). Dokumen ini
+                                    sebelumnya salah bilang "butuh
+                                    backend+database asli" — diperbaiki
+                                    2026-07-11 pas ketahuan gak sesuai
+                                    playwright.config.ts & kelakuan
+                                    beneran sepanjang sesi verifikasi.
 
 --------------------------------------------------------------------------------
 8.3 DEPLOY

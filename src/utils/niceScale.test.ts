@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { niceCeiling } from "./niceScale";
+import { formatChartAxis, niceCeiling } from "./niceScale";
 
 describe("niceCeiling", () => {
   it("rounds a ~800rb peak up to 1jt with headroom", () => {
@@ -28,5 +28,21 @@ describe("niceCeiling", () => {
 
   it("scales down for small peaks too", () => {
     expect(niceCeiling(50)).toBe(100);
+  });
+});
+
+describe("formatChartAxis", () => {
+  it("keeps values under 1jt in rb", () => {
+    expect(formatChartAxis(500_000)).toBe("500rb");
+    expect(formatChartAxis(0)).toBe("0rb");
+  });
+
+  it("switches to 'juta' at 1jt and above, dropping trailing .0", () => {
+    expect(formatChartAxis(1_000_000)).toBe("1 juta");
+    expect(formatChartAxis(2_000_000)).toBe("2 juta");
+  });
+
+  it("uses a comma decimal for fractional millions", () => {
+    expect(formatChartAxis(1_500_000)).toBe("1,5 juta");
   });
 });

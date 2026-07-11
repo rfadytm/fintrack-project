@@ -169,6 +169,39 @@ export async function mockAuthenticated(page: Page) {
   });
 }
 
+// Public-demo fixtures: same shape as the authenticated ones, but sensitive
+// numeric fields replaced with null — mirroring shared/masking.py's real
+// server-side behavior for unauthenticated viewers (see App.tsx's comment on
+// the public-demo routes: /dashboard, /journal, /ledger, /reports stay
+// reachable without a session, masked at the API layer, not route-blocked).
+const MASKED_BALANCE = { balances: BALANCE.balances.map((b) => ({ ...b, balance: null })) };
+const MASKED_MONTHLY = { income: null, expense: null, net: null, savings_rate: null };
+const MASKED_INCOME_STATEMENT = {
+  revenue: INCOME_STATEMENT.revenue.map((r) => ({ ...r, amount: null })),
+  expense: INCOME_STATEMENT.expense.map((r) => ({ ...r, amount: null })),
+  total_revenue: null,
+  total_expense: null,
+  net_income: null,
+};
+const MASKED_TRANSACTIONS = {
+  transactions: TRANSACTIONS.transactions.map((t) => ({
+    ...t,
+    journal_lines: (t.journal_lines || []).map((l) => ({ ...l, debit_amount: null, credit_amount: null })),
+  })),
+  total: TRANSACTIONS.total,
+};
+
 export async function mockUnauthenticated(page: Page) {
   await page.route("**/api/auth/me", (route) => json(route, { logged_in: false }));
+  await page.route("**/api/accounts**", (route) => json(route, ACCOUNTS));
+  await page.route("**/api/reports**", async (route) => {
+    const report = queryOf(route).get("report");
+    const byReport: Record<string, unknown> = {
+      balance: MASKED_BALANCE,
+      monthly: MASKED_MONTHLY,
+      "income-statement": MASKED_INCOME_STATEMENT,
+    };
+    await json(route, byReport[report ?? ""] ?? { error: `unmocked report: ${report}` });
+  });
+  await page.route("**/api/transactions**", (route) => json(route, MASKED_TRANSACTIONS));
 }

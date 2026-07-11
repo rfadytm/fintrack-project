@@ -16,3 +16,13 @@ if (typeof window !== "undefined") {
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
 }
+
+// jsdom has no ResizeObserver — Recharts' <ResponsiveContainer> (used by
+// CategoryChart/TimelineChart) needs one to measure its box on mount.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}

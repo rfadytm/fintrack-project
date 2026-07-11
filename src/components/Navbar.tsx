@@ -16,7 +16,7 @@ const links: [string, string][] = [
 
 export default function Navbar() {
   return (
-    <nav className="sticky top-0 z-40 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 bg-navy/70 backdrop-blur-xl border-b border-white/10 text-white px-4 sm:px-6 py-3 shadow-lg shadow-navy/20">
+    <nav className="sticky top-0 z-40 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 bg-[#16161a]/60 backdrop-blur-xl border-b border-white/[0.06] text-white px-4 sm:px-6 py-3 shadow-lg shadow-black/20">
       <NavLink
         to="/dashboard"
         className="flex items-center gap-2 font-bold text-lg text-white no-underline shrink-0 hover:opacity-85"

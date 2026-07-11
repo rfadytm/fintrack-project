@@ -21,7 +21,7 @@ export default function Reports() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Laporan Keuangan</h2>
+      <h2 className="text-white text-xl font-bold m-0">Laporan Keuangan</h2>
       <div className="flex gap-3 items-center flex-wrap">
         <Input
           type="month"
@@ -103,8 +103,8 @@ function RangeAnalysis() {
 function ForecastTierCard({ tier }: { tier: ForecastTier }) {
   const locked = tier.income == null;
   return (
-    <div className="rounded-xl border border-navy/10 p-3">
-      <div className="text-navy text-sm font-semibold">{tier.label}</div>
+    <div className="rounded-xl border border-white/10 p-3">
+      <div className="text-white text-sm font-semibold">{tier.label}</div>
       {locked ? (
         <p className="text-muted text-xs mt-2">
           Belum cukup data — butuh minimal {tier.min_real_months} bulan penuh riwayat transaksi.
@@ -148,7 +148,7 @@ function ForecastCard() {
       </div>
       {d.top_categories.length > 0 && (
         <>
-          <h4 className="text-navy mb-1">Tren kategori tertinggi</h4>
+          <h4 className="text-white mb-1">Tren kategori tertinggi</h4>
           <Table>
             <TableHeader>
               <TableRow>
@@ -230,7 +230,7 @@ function Section({
 }) {
   return (
     <>
-      <h4 className="text-navy mb-1">{title}</h4>
+      <h4 className="text-white mb-1">{title}</h4>
       <Table>
         <TableBody>
           {rows.map((r) => (
@@ -240,7 +240,7 @@ function Section({
               <TableCell className="text-right tabular-nums">{formatRupiah(r.amount)}</TableCell>
             </TableRow>
           ))}
-          <TableRow className="font-bold border-t-2 border-navy">
+          <TableRow className="font-bold border-t-2 border-white/20">
             <TableCell colSpan={2}>Total {title}</TableCell>
             <TableCell className="text-right tabular-nums">{formatRupiah(total)}</TableCell>
           </TableRow>
@@ -314,7 +314,7 @@ function TrialBalance({ year, month }: { year: number; month: number }) {
               </TableCell>
             </TableRow>
           ))}
-          <TableRow className="font-bold border-t-2 border-navy">
+          <TableRow className="font-bold border-t-2 border-white/20">
             <TableCell colSpan={2}>TOTAL {d.balanced ? "✅ Balance" : "⚠️ Tidak balance"}</TableCell>
             <TableCell className="text-right tabular-nums">{formatRupiah(d.total_debit)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatRupiah(d.total_credit)}</TableCell>

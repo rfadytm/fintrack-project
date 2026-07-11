@@ -13,7 +13,7 @@ export default function Login() {
       >
         <Card className="max-w-sm text-center">
           <img src="/logo.png" alt="FinTrack" className="h-20 w-20 object-contain mx-auto mb-2" />
-          <h1 className="text-navy text-2xl font-bold m-0">FinTrack</h1>
+          <h1 className="text-white text-2xl font-bold m-0">FinTrack</h1>
           <p className="text-sm mt-2">Login lewat Telegram untuk keamanan.</p>
           <ol className="text-left text-sm space-y-1 my-3 pl-5">
             <li>Buka bot Telegram FinTrack kamu.</li>

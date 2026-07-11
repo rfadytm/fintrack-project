@@ -69,7 +69,7 @@ export default function Budgets() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Budget</h2>
+      <h2 className="text-white text-xl font-bold m-0">Budget</h2>
 
       <Card>
         <CardTitle>Tambah Budget</CardTitle>
@@ -138,7 +138,7 @@ export default function Budgets() {
                     <TableCell className="text-right tabular-nums">{formatRupiah(b.spent)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatRupiah(b.monthly_limit)}</TableCell>
                     <TableCell>
-                      <div className="w-32 h-2 rounded-full bg-navy/10 overflow-hidden">
+                      <div className="w-32 h-2 rounded-full bg-white/10 overflow-hidden">
                         <div className={`h-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>
                       <span className="text-xs text-muted">{pct}%</span>

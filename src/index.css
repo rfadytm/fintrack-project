@@ -1,14 +1,20 @@
 @import "tailwindcss";
 
+/* Apple obsidian glassmorphism — dark palette. `navy` keeps its original dark
+   value on purpose: it's used throughout as a dark SURFACE/accent tint
+   (buttons, badges, dialog overlay, table hover, tab active state), which
+   already reads correctly against a dark canvas. Only TEXT usages of
+   text-navy were swapped to text-white across the app (headings/numbers need
+   to be light now, not dark-on-dark). */
 @theme {
   --color-navy: #1f3864;
   --color-navy-light: #2c4a7c;
-  --color-blue: #2e75b6;
-  --color-blue-light: #5b9bd5;
-  --color-border: #e2e8f0;
-  --color-green: #2f855a;
-  --color-red: #c53030;
-  --color-muted: #718096;
+  --color-blue: #0a84ff;
+  --color-blue-light: #409cff;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-green: #34c759;
+  --color-red: #ff3b30;
+  --color-muted: #98989d;
 }
 
 * {
@@ -18,7 +24,7 @@
 body {
   margin: 0;
   font-family: -apple-system, "Segoe UI", Arial, sans-serif;
-  color: #1a202c;
+  color: #f5f5f7;
 }
 
 #root {
@@ -26,7 +32,8 @@ body {
 }
 
 code {
-  background: #edf2f7;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5f5f7;
   padding: 1px 5px;
   border-radius: 4px;
 }
@@ -40,3 +47,42 @@ code {
   background: var(--color-border);
   border-radius: 3px;
 }
+
+/* Dialog open/close motion, keyed off Radix's own data-state attribute.
+   Plain CSS instead of the tailwindcss-animate plugin (not a project
+   dependency) — Radix's Presence still waits for animationend before
+   unmounting the closed state, so this is a drop-in equivalent. The open
+   keyframe uses an Apple-spring cubic-bezier for a subtle hardware-spring
+   overshoot instead of a flat ease. */
+@keyframes dialog-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes dialog-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.dialog-overlay-anim[data-state="open"] { animation: dialog-overlay-in 0.2s ease-out; }
+.dialog-overlay-anim[data-state="closed"] { animation: dialog-overlay-out 0.15s ease-in; }
+
+@keyframes dialog-content-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@keyframes dialog-content-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+}
+.dialog-content-anim[data-state="open"] {
+  animation: dialog-content-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.dialog-content-anim[data-state="closed"] { animation: dialog-content-out 0.15s ease-in; }
+
+/* macOS-style "wrong password" shake for form validation errors. */
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.shake-on-error { animation: shake 0.3s; }

@@ -45,7 +45,7 @@ export default function COA() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Chart of Accounts</h2>
+      <h2 className="text-white text-xl font-bold m-0">Chart of Accounts</h2>
 
       <Card>
         <CardTitle>Tambah Kategori Beban Custom</CardTitle>
@@ -78,7 +78,7 @@ export default function COA() {
           </TableHeader>
           <TableBody>
             {accounts.map((a) => (
-              <TableRow key={a.code} className={cn(a.is_header && "bg-navy/[0.04]")}>
+              <TableRow key={a.code} className={cn(a.is_header && "bg-white/[0.04]")}>
                 <TableCell>{a.code}</TableCell>
                 <TableCell style={{ paddingLeft: `${(a.level - 1) * 16}px` }}>
                   {a.is_header ? <b>{a.account_name}</b> : a.account_name}

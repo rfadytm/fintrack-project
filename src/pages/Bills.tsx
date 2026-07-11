@@ -57,7 +57,7 @@ export default function Bills() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Tagihan</h2>
+      <h2 className="text-white text-xl font-bold m-0">Tagihan</h2>
 
       <Card>
         <CardTitle>Tambah Tagihan</CardTitle>

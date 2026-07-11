@@ -61,7 +61,7 @@ export default function Goals() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Goals</h2>
+      <h2 className="text-white text-xl font-bold m-0">Goals</h2>
 
       <Card>
         <CardTitle>Tambah Goal</CardTitle>
@@ -130,7 +130,7 @@ export default function Goals() {
                 <p className="text-sm text-muted mt-1">
                   {formatRupiah(g.current_amount)} / {formatRupiah(g.target_amount)}
                 </p>
-                <div className="w-full h-2.5 rounded-full bg-navy/10 overflow-hidden mt-2">
+                <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden mt-2">
                   <div className="h-full bg-blue" style={{ width: `${pct}%` }} />
                 </div>
                 <p className="text-xs text-muted mt-1">{pct}%</p>

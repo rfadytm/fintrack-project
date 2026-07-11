@@ -32,7 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <Card className="max-w-md text-center">
             <CardContent className="flex flex-col items-center gap-3">
               <p className="text-2xl">⚠️</p>
-              <h2 className="text-navy font-semibold text-lg">Terjadi kesalahan</h2>
+              <h2 className="text-white font-semibold text-lg">Terjadi kesalahan</h2>
               <p className="text-muted text-sm">{this.state.error.message}</p>
               <Button onClick={() => window.location.reload()}>Muat ulang</Button>
             </CardContent>

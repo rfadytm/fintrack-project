@@ -67,7 +67,7 @@ function Layout() {
             </motion.div>
           </AnimatePresence>
         </main>
-        <footer className="text-center py-4 text-xs text-muted border-t border-white/30 bg-white/30 backdrop-blur-md">
+        <footer className="text-center py-4 text-xs text-muted border-t border-white/[0.06] bg-[#16161a]/40 backdrop-blur-md">
           © {new Date().getFullYear()} FinTrack — dev Rafi
         </footer>
       </div>
@@ -111,7 +111,16 @@ export default function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
-        <Toaster richColors position="top-center" />
+        <Toaster
+          richColors
+          position="top-right"
+          theme="dark"
+          toastOptions={{
+            classNames: {
+              toast: "!bg-[#16161a]/80 !backdrop-blur-xl !border !border-white/[0.08] !rounded-2xl",
+            },
+          }}
+        />
       </ErrorBoundary>
     </QueryClientProvider>
   );

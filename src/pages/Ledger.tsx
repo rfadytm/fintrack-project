@@ -58,7 +58,7 @@ export default function Ledger() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Buku Besar</h2>
+      <h2 className="text-white text-xl font-bold m-0">Buku Besar</h2>
       {accountsQuery.error && (
         <p className="text-red text-sm">Gagal memuat daftar akun: {(accountsQuery.error as Error).message}</p>
       )}
@@ -86,7 +86,7 @@ export default function Ledger() {
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-muted text-sm">
-          Akun aktif: <b className="text-navy">{account}</b>
+          Akun aktif: <b className="text-white">{account}</b>
         </span>
         <Button variant="outline" size="sm" disabled={!lines.length} onClick={() => guard(exportLedger)}>
           ⬇️ Export .xlsx

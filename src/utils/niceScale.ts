@@ -12,3 +12,17 @@ export function niceCeiling(max: number): number {
   const step = NICE_STEPS.find((s) => s > normalized + 1e-9) ?? NICE_STEPS[0] * 10;
   return Math.round(step * magnitude);
 }
+
+// Blindspot fix: nilai >= 1 juta ditampilkan sebagai "1000rb"/"1500rb" —
+// benar tapi tidak wajar dibaca orang Indonesia, harusnya "1 juta"/"1,5 juta".
+// Di bawah 1 juta tetap "rb" (500rb, bukan "0,5 juta").
+export function formatChartAxis(value: number): string {
+  if (!Number.isFinite(value)) return "0rb";
+  if (Math.abs(value) >= 1_000_000) {
+    const juta = value / 1_000_000;
+    const rounded = Math.round(juta * 10) / 10; // 1 desimal
+    const label = Number.isInteger(rounded) ? String(rounded) : rounded.toString().replace(".", ",");
+    return `${label} juta`;
+  }
+  return `${value / 1000}rb`;
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import TransactionTable from "../components/TransactionTable";
@@ -14,12 +14,23 @@ import { exportPdf } from "../utils/exportPdf";
 import { formatTanggal } from "../utils/dateHelpers";
 import { useExportGuard } from "../hooks/useExportGuard";
 import { OwnerOnlyDialog } from "../components/OwnerOnlyDialog";
+import type { Transaction } from "../types/api";
 
 const DOC_TYPES = ["OB", "KK", "KM", "TR", "JU", "RV"];
+
+type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
+const SORT_LABELS: Record<SortKey, string> = {
+  date_desc: "Tanggal terbaru",
+  date_asc: "Tanggal terlama",
+  amount_desc: "Nominal terbesar",
+  amount_asc: "Nominal terkecil",
+};
+const txTotal = (t: Transaction) => (t.journal_lines || []).reduce((s, l) => s + (l.debit_amount || 0), 0);
 
 export default function Journal() {
   const [type, setType] = useState("");
   const [tag, setTag] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("date_desc");
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
   const { guard, dialogOpen, setDialogOpen } = useExportGuard();
@@ -28,6 +39,24 @@ export default function Journal() {
   const { loading, transactions, total, error } = useTransactions(qs);
   const pages = Math.ceil((total || 0) / limit);
   const tagsQuery = useQuery({ queryKey: ["tags"], queryFn: api.tags });
+
+  // Sort dilakukan di sisi client atas halaman yang sudah di-fetch (server
+  // tetap urutkan created_at desc) — cukup untuk kebutuhan "urutkan tampilan
+  // per halaman" tanpa perlu ubah endpoint.
+  const sortedTransactions = useMemo(() => {
+    const rows = [...transactions];
+    switch (sortBy) {
+      case "date_asc":
+        return rows.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+      case "amount_desc":
+        return rows.sort((a, b) => txTotal(b) - txTotal(a));
+      case "amount_asc":
+        return rows.sort((a, b) => txTotal(a) - txTotal(b));
+      case "date_desc":
+      default:
+        return rows.sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+    }
+  }, [transactions, sortBy]);
 
   // Blindspot fix: if a filter change shrinks `total`, the current page could
   // be left past the new last page (pager showing an empty table with no way back).
@@ -80,7 +109,7 @@ export default function Journal() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-navy text-xl font-bold m-0">Jurnal</h2>
+      <h2 className="text-white text-xl font-bold m-0">Jurnal</h2>
       <div className="flex gap-3 items-center flex-wrap">
         <Select
           className="w-auto"
@@ -112,6 +141,13 @@ export default function Journal() {
             </option>
           ))}
         </Select>
+        <Select className="w-auto" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
+          {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+            <option key={key} value={key}>
+              Urutkan: {SORT_LABELS[key]}
+            </option>
+          ))}
+        </Select>
         <Button variant="outline" size="sm" onClick={() => guard(() => handleExport("xlsx"))} disabled={exporting}>
           {exporting ? "…" : "⬇️ Excel"}
         </Button>
@@ -126,7 +162,7 @@ export default function Journal() {
         </Button>
       </div>
       {error && <p className="text-red text-sm">Gagal memuat jurnal: {error}</p>}
-      {loading ? <Skeleton className="h-64" /> : <TransactionTable transactions={transactions} />}
+      {loading ? <Skeleton className="h-64" /> : <TransactionTable transactions={sortedTransactions} />}
       <div className="flex items-center justify-center gap-3">
         <Button
           variant="outline"

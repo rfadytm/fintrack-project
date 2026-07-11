@@ -1,6 +1,6 @@
 # FinTrack v2 — OCR Struk + API Layer (Changelog & Catatan Serah-Terima)
 
-Tanggal: 2026-07-03 · Status: **live di produksi** (`https://fintrack-project-mu.vercel.app`)
+Tanggal: 2026-07-03 · Status: **live di produksi** (`https://fintrack.vercel.app`)
 
 Ringkasan perubahan v2 dan hal-hal yang perlu diketahui untuk maintenance.
 

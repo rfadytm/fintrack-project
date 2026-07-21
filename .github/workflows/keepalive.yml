@@ -1,24 +1,46 @@
 name: keepalive-and-backup
 
-# B8: Supabase free tier pause setelah 7 hari idle -> ping tiap 3 hari.
+# B8: Supabase free tier pause setelah 7 hari idle -> ping tiap hari.
 # B9: backup harian via pg_dump -> commit ke repo (private).
+#
+# 2026-07-21: project SEMPAT ke-pause beneran (email dari Supabase) walau
+# job "keepalive" di bawah ini selalu "success" tiap kali jalan. Dua akar
+# masalah yang dibenahi sekaligus di sini, karena Supabase sendiri gak
+# jelasin persis kriteria "aktivitas"-nya di dokumentasi resmi:
+#   1. Jadwal lama "tiap 3 hari" nyisain nyaris NOL margin — sekali aja
+#      satu run telat/gagal (GitHub Actions scheduled workflow memang
+#      dikenal kadang delay/dilewatin pas beban tinggi, bukan dijamin
+#      presisi), jarak ke run berikutnya bisa gampang lewat 7 hari.
+#      Diganti jadi HARIAN — kalaupun 1 run gagal, masih ada 6 hari
+#      margin sebelum kena batas.
+#   2. Step lama cuma SELECT (baca doang) — cukup ambigu apakah itu
+#      dihitung "database activity" beneran oleh Supabase. Diganti jadi
+#      UPSERT (nulis) ke bot_settings, yang jauh lebih gak ambigu sebagai
+#      "aktivitas" di kriteria manapun.
+# Backup job (pg_dump) TETAP jalan harian juga seperti sebelumnya — itu
+# koneksi Postgres langsung yang beda jalur dari REST API, jadi tetap
+# dipertahankan sebagai lapisan tambahan, bukan pengganti REST ping ini.
 on:
   schedule:
-    - cron: "0 2 */3 * *"   # tiap 3 hari, 02:00 UTC (keepalive)
-    - cron: "0 3 * * *"     # harian, 03:00 UTC (backup)
+    - cron: "0 2 * * *"   # harian, 02:00 UTC (keepalive)
+    - cron: "0 3 * * *"   # harian, 03:00 UTC (backup)
   workflow_dispatch:
 
 jobs:
   keepalive:
-    if: github.event.schedule == '0 2 */3 * *' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 2 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST
+      - name: Ping Supabase REST (write, not just read)
         run: |
-          curl -fsS "${{ secrets.SUPABASE_URL }}/rest/v1/bot_settings?select=key&limit=1" \
+          curl -fsS "${{ secrets.SUPABASE_URL }}/rest/v1/bot_settings" \
+            -X POST \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
             -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-            && echo "Supabase alive."
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            -d "{\"key\": \"last_keepalive_ping\", \"value\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+            && echo "Supabase alive (wrote last_keepalive_ping)."
 
   backup:
     if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'

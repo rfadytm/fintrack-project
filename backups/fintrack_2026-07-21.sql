@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict tz5qXRf7JnCyLMBmGLKawkLa4PzQCyJ1MGbj5ebDlqygPXIQMO8vZ8aVSETFVSg
+\restrict gpIcQ6azaKJ9g7unFNM74JbMKhEBr3ysQmcYHJhnx5XcT7Ql76NfBjQZT57Vgbv
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.10 (Ubuntu 17.10-1.pgdg24.04+1)
@@ -4887,6 +4887,7 @@ COPY public.audit_log (id, table_name, record_id, action, old_data, new_data, ch
 147	transactions	KK-2026-07-033	INSERT	\N	{"status": "POSTED", "doc_type": "KK", "created_at": "2026-07-11T13:00:09.610418+00:00", "doc_number": "KK-2026-07-033", "description": null, "is_reversal": false, "period_year": 2026, "input_source": "telegram", "period_month": 7, "reversal_of_doc": null, "transaction_date": "2026-07-11"}	2026-07-11 13:00:09.610418+00
 148	journal_lines	76	INSERT	\N	{"id": 76, "doc_number": "KK-2026-07-033", "line_order": 1, "account_code": "5710", "debit_amount": 814000, "credit_amount": 0}	2026-07-11 13:00:09.610418+00
 149	journal_lines	77	INSERT	\N	{"id": 77, "doc_number": "KK-2026-07-033", "line_order": 2, "account_code": "1120", "debit_amount": 0, "credit_amount": 814000}	2026-07-11 13:00:09.610418+00
+150	bot_settings	last_keepalive_ping	INSERT	\N	{"key": "last_keepalive_ping", "notes": null, "value": "2026-07-21T14:08:11Z"}	2026-07-21 14:08:12.613803+00
 \.
 
 
@@ -5069,6 +5070,7 @@ weekly_report_enabled	true	Aktif/nonaktifkan laporan mingguan (Minggu)
 alert_sensitivity	normal	Sensitivitas deteksi anomali: strict/normal/relaxed
 rate_limit_per_minute	20	Maks pesan bot per user per menit sebelum ditolak
 budget_alert_throttle_mins	120	Jarak minimum antar alert budget per kategori (menit)
+last_keepalive_ping	2026-07-21T14:08:11Z	\N
 \.
 
 
@@ -5763,7 +5765,7 @@ SELECT pg_catalog.setval('public.activity_log_id_seq', 181, true);
 -- Name: audit_log_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.audit_log_id_seq', 149, true);
+SELECT pg_catalog.setval('public.audit_log_id_seq', 150, true);
 
 
 --
@@ -7781,5 +7783,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tz5qXRf7JnCyLMBmGLKawkLa4PzQCyJ1MGbj5ebDlqygPXIQMO8vZ8aVSETFVSg
+\unrestrict gpIcQ6azaKJ9g7unFNM74JbMKhEBr3ysQmcYHJhnx5XcT7Ql76NfBjQZT57Vgbv
 
